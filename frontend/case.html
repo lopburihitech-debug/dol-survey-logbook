@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>รายละเอียดงาน — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container" id="mainContent">
+  <div class="loading">กำลังโหลดข้อมูล...</div>
+</div>
+
+<!-- Modal: แก้ไขเรื่อง (แอดมิน/ผู้บริหาร/ผู้ดูแลจังหวัด) -->
+<div class="modal-backdrop" id="editCaseModal" style="display:none;">
+  <div class="modal">
+    <h3>แก้ไขเรื่อง รว.19</h3>
+    <form id="editCaseForm">
+      <div class="form-row">
+        <label>เลข รว.19</label>
+        <input type="text" id="ec_caseCode" required>
+      </div>
+      <div class="form-row">
+        <label>สำนักงาน</label>
+        <select id="ec_officeId" required></select>
+      </div>
+      <div class="form-row">
+        <label>ประเภทงาน</label>
+        <select id="ec_surveyTypeId" required></select>
+      </div>
+      <div class="form-row">
+        <label>ชื่อผู้ขอ</label>
+        <input type="text" id="ec_requesterName" required>
+      </div>
+      <div class="form-row">
+        <label>เบอร์ติดต่อ</label>
+        <input type="text" id="ec_requesterContact">
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>วันที่รับเรื่อง</label>
+          <input type="date" id="ec_receivedDate" required>
+        </div>
+        <div class="form-row">
+          <label>วันครบกำหนด (ถ้ามี)</label>
+          <input type="date" id="ec_dueDate">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>วันที่นัดรังวัด (ถ้ามี)</label>
+        <input type="date" id="ec_appointmentDate">
+      </div>
+      <div class="form-row">
+        <label>ความสำคัญ</label>
+        <input type="text" id="ec_priority" placeholder="เช่น normal, urgent">
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึกการแก้ไข</button>
+        <button type="button" class="btn btn-outline" onclick="closeEditModal()">ยกเลิก</button>
+      </div>
+      <div id="editCaseError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: ยืนยันลบเรื่อง — ต้องพิมพ์ YES เพื่อยืนยันเนื่องจากเป็นการลบถาวร ทำคืนไม่ได้ -->
+<div class="modal-backdrop" id="deleteCaseModal" style="display:none;">
+  <div class="modal">
+    <h3 style="color:var(--danger);">ยืนยันลบเรื่อง รว.19</h3>
+    <p style="font-size:13.5px; color:var(--text);">
+      กำลังจะลบเรื่อง <strong id="dc_caseCode">-</strong> อย่างถาวร ข้อมูลที่เกี่ยวข้องทั้งหมด (การมอบหมาย รูปภาพ
+      แผนที่หมุด ประวัติสถานะ ฯลฯ) จะถูกลบไปด้วย <strong>การลบนี้ทำคืนไม่ได้</strong>
+    </p>
+    <div class="form-row">
+      <label>พิมพ์ <strong>YES</strong> เพื่อยืนยันการลบ</label>
+      <input type="text" id="dc_confirmInput" autocomplete="off" placeholder="YES">
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-danger" id="dc_confirmBtn" disabled>ลบถาวร</button>
+      <button type="button" class="btn btn-outline" onclick="closeDeleteModal()">ยกเลิก</button>
+    </div>
+    <div id="deleteCaseError" class="error-text" style="display:none;"></div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  const params = new URLSearchParams(window.location.search);
+  const caseId = params.get("id");
+  let currentUser = null;
+  let currentCase = null;
+  let typeMap = {};
+  let surveyorsList = [];
+  let allOffices = [];
+
+  // เส้นทางสถานะที่อนุญาต (mirror ของ backend ALLOWED_TRANSITIONS เฉพาะส่วนที่เลือกได้จากหน้าจอ
+  // การตรวจสอบจริงยังเกิดที่ backend เสมอ)
+  const TRANSITIONS = {
+    RECEIVED: ["WAITING_ASSIGNMENT", "CANCELLED"],
+    WAITING_ASSIGNMENT: ["ASSIGNED", "CANCELLED"],
+    ASSIGNED: ["APPOINTED", "CANCELLED"],
+    APPOINTED: ["SURVEY_DONE", "CLOSED", "POSTPONED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "CANCELLED"],
+    POSTPONED: ["APPOINTED", "CANCELLED"],
+    SURVEY_SKIPPED: ["RE_APPOINTMENT_NEEDED", "CANCELLED"],
+    RE_APPOINTMENT_NEEDED: ["APPOINTED", "CANCELLED"],
+    // งานที่ต้องแก้ไข/รังวัดซ้ำ อาจไม่ได้กลับไปแค่ "รอการรังวัด" เพียงอย่างเดียว — ให้ตัวเลือกครบเหมือนตอนอยู่สถานะ
+    // "รอการรังวัด" (APPOINTED) เผื่อพบว่าต้องเลื่อนนัด/งดรังวัด/นัดตรวจสอบใหม่/ยกเลิก/ถอนจ่าย/บันทึกรังวัดเสร็จไปเลยก็ได้
+    REWORK_REQUIRED: ["APPOINTED", "SURVEY_DONE", "CLOSED", "POSTPONED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "CANCELLED"],
+    // รังวัดในพื้นที่เสร็จแล้ว ยังไม่ใช่ขั้นตอนสุดท้าย — ไปต่อได้ทั้งปิดเรื่อง (ถอนจ่ายแล้ว) หรือย้อนกลับไปแก้ไข/
+    // รังวัดซ้ำถ้าพบปัญหาภายหลัง หรือยกเลิกในกรณีพิเศษ
+    SURVEY_DONE: ["CLOSED", "REWORK_REQUIRED", "CANCELLED"],
+    // งานที่ "ถอนจ่ายแล้ว" เปิดกลับมาแก้ไข/รังวัดซ้ำได้ กรณีพบว่าต้องซ่อมงานหรือแก้ไขเพิ่มเติมภายหลัง
+    // (จำกัดเฉพาะผู้บริหาร/ผู้ดูแลระบบ — กรองออกด้านล่างสำหรับบทบาทอื่น เช่นเดียวกับ CLOSED)
+    CLOSED: ["REWORK_REQUIRED"],
+  };
+
+  const CHECKLIST_DEFS = [
+    { key: "survey_result", label: "ผลการรังวัด", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "mapping_status", label: "ขึ้นรูป", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "neighbor_status", label: "ข้างเคียง", pos: "COMPLETE", posLabel: "ครบ", neg: "WAITING_AGENCY", negLabel: "รอส่วนราชการ" },
+    { key: "announcement_status", label: "ปิดประกาศ", pos: "POSTED", posLabel: "ปิดแล้ว", neg: "WAITING", negLabel: "รอปิด" },
+  ];
+
+  async function init() {
+    currentUser = await renderTopbar("cases");
+    const types = await apiFetch("/survey-types");
+    (types || []).forEach((t) => (typeMap[t.id] = t));
+    await loadCase();
+    if (canManage()) {
+      const officeId = (currentCase && currentCase.office_id) || currentUser.office_id;
+      surveyorsList = (await apiFetch("/surveyors" + (officeId ? "?office_id=" + officeId : ""))) || [];
+      allOffices = (await apiFetch("/offices")) || [];
+      setupEditFormOptions();
+    }
+  }
+
+  // สิทธิ์ลบเรื่อง — เข้มงวดกว่าแก้ไข (canManage) เพราะเป็นการทำลายข้อมูลถาวร ทำคืนไม่ได้ ต้องตรงกับ
+  // require_roles ของ DELETE /survey-cases/<id> ฝั่ง backend เป๊ะๆ
+  function canDeleteThisCase() {
+    return ["system_admin", "province_admin"].includes(currentUser.role);
+  }
+
+  // ตัวเลือกในฟอร์มแก้ไข (ประเภทงาน/สำนักงาน) — เรียกครั้งเดียวตอน init หลังโหลด typeMap/allOffices ครบแล้ว
+  function setupEditFormOptions() {
+    const typeSelect = document.getElementById("ec_surveyTypeId");
+    if (typeSelect) {
+      const sortedTypes = Object.values(typeMap).sort((a, b) => a.name.localeCompare(b.name, "th"));
+      typeSelect.innerHTML = sortedTypes.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
+    }
+    const officeSelect = document.getElementById("ec_officeId");
+    if (officeSelect) {
+      const sortedOffices = [...allOffices].sort((a, b) => a.name.localeCompare(b.name, "th"));
+      officeSelect.innerHTML = sortedOffices.map((o) => `<option value="${o.id}">${o.name} (${o.province})</option>`).join("");
+    }
+  }
+
+  function openEditModal() {
+    const c = currentCase;
+    document.getElementById("ec_caseCode").value = c.case_code || "";
+    document.getElementById("ec_officeId").value = c.office_id || "";
+    document.getElementById("ec_surveyTypeId").value = c.survey_type_id || "";
+    document.getElementById("ec_requesterName").value = c.requester_name || "";
+    document.getElementById("ec_requesterContact").value = c.requester_contact || "";
+    document.getElementById("ec_receivedDate").value = (c.received_date || "").slice(0, 10);
+    document.getElementById("ec_dueDate").value = (c.due_date || "").slice(0, 10);
+    document.getElementById("ec_appointmentDate").value = (c.appointment_date || "").slice(0, 10);
+    document.getElementById("ec_priority").value = c.priority || "";
+    document.getElementById("editCaseError").style.display = "none";
+    document.getElementById("editCaseModal").style.display = "flex";
+  }
+
+  function closeEditModal() {
+    document.getElementById("editCaseModal").style.display = "none";
+  }
+
+  document.getElementById("editCaseForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("editCaseError");
+    errorBox.style.display = "none";
+
+    const payload = {
+      case_code: document.getElementById("ec_caseCode").value.trim(),
+      office_id: document.getElementById("ec_officeId").value,
+      survey_type_id: document.getElementById("ec_surveyTypeId").value,
+      requester_name: document.getElementById("ec_requesterName").value.trim(),
+      requester_contact: document.getElementById("ec_requesterContact").value.trim() || null,
+      received_date: document.getElementById("ec_receivedDate").value,
+      due_date: document.getElementById("ec_dueDate").value || null,
+      appointment_date: document.getElementById("ec_appointmentDate").value || null,
+      priority: document.getElementById("ec_priority").value.trim() || "normal",
+    };
+    try {
+      await apiFetch("/survey-cases/" + caseId, { method: "PATCH", body: JSON.stringify(payload) });
+      closeEditModal();
+      // ประเภทงาน/สำนักงานอาจเปลี่ยนไป และ typeMap/surveyorsList ผูกกับสำนักงานเดิม — โหลดหน้าใหม่ทั้งหมดให้ตรงกับ
+      // ข้อมูลล่าสุดเสมอ ง่ายและชัวร์กว่าพยายามอัปเดตทีละส่วนซึ่งเสี่ยงตกหล่น
+      window.location.reload();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  function openDeleteModal() {
+    document.getElementById("dc_caseCode").textContent = currentCase.case_code;
+    document.getElementById("dc_confirmInput").value = "";
+    document.getElementById("dc_confirmBtn").disabled = true;
+    document.getElementById("deleteCaseError").style.display = "none";
+    document.getElementById("deleteCaseModal").style.display = "flex";
+  }
+
+  function closeDeleteModal() {
+    document.getElementById("deleteCaseModal").style.display = "none";
+  }
+
+  document.getElementById("dc_confirmInput").addEventListener("input", (e) => {
+    document.getElementById("dc_confirmBtn").disabled = e.target.value.trim() !== "YES";
+  });
+
+  document.getElementById("dc_confirmBtn").addEventListener("click", async () => {
+    if (document.getElementById("dc_confirmInput").value.trim() !== "YES") return;
+    const errorBox = document.getElementById("deleteCaseError");
+    errorBox.style.display = "none";
+    try {
+      await apiFetch("/survey-cases/" + caseId, { method: "DELETE" });
+      window.location.href = "/cases.html";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  async function loadCase() {
+    currentCase = await apiFetch("/survey-cases/" + caseId);
+    if (!currentCase) return;
+    render();
+  }
+
+  function canManage() {
+    return ["system_admin", "administrator", "province_admin"].includes(currentUser.role);
+  }
+
+  function render() {
+    const c = currentCase;
+    const p = c.parcel || {};
+    const type = typeMap[c.survey_type_id];
+    const surveyor = c.assigned_surveyor;
+
+    document.getElementById("mainContent").innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h1>${c.case_code} ${statusBadge(c.status)}</h1>
+          <div class="subtitle">ผู้ขอ: ${c.requester_name} ${c.requester_contact ? "· " + c.requester_contact : ""}</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${canManage() ? `<button type="button" class="btn btn-outline btn-sm" onclick="openEditModal()">แก้ไขเรื่อง</button>` : ""}
+          ${canDeleteThisCase() ? `<button type="button" class="btn btn-danger btn-sm" onclick="openDeleteModal()">ลบเรื่อง</button>` : ""}
+          <a href="/cases.html" class="btn btn-outline btn-sm">&larr; กลับรายการ</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ข้อมูลงาน</h2>
+        <div class="info-grid">
+          <div><span class="k">ประเภทงาน:</span> ${type ? type.name : "-"}</div>
+          <div><span class="k">SLA:</span> ${type ? type.target_days + " วันทำการ" : "-"}</div>
+          <div><span class="k">วันรับเรื่อง:</span> ${fmtDateOnly(c.received_date)}</div>
+          <div><span class="k">วันครบกำหนด:</span> ${fmtDateOnly(c.due_date)}</div>
+          <div><span class="k">วันนัดรังวัด:</span> ${fmtDateOnly(c.appointment_date)}</div>
+          <div><span class="k">ความสำคัญ:</span> ${c.priority}</div>
+          <div><span class="k">นายช่างรังวัดที่รับผิดชอบ:</span> ${surveyor ? surveyor.full_name + (surveyor.nickname ? " (" + surveyor.nickname + ")" : "") : "<span style='color:var(--text-muted);'>ยังไม่มอบหมาย</span>"}</div>
+        </div>
+
+        ${canManage() ? `
+          <div style="margin-top:14px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="toggleReassignForm()">${surveyor ? "🔁 เปลี่ยน/ย้ายช่างรังวัด" : "➕ มอบหมายช่างรังวัด"}</button>
+            <div id="reassignBox" style="display:none;"></div>
+          </div>
+        ` : ""}
+
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer; font-size:13.5px; font-weight:600; color:#334155;">ประวัติช่างที่เคยรับผิดชอบ</summary>
+          <ul class="timeline" id="assignHistoryList" style="margin-top:10px;"><li class="loading">กำลังโหลด...</li></ul>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>เช็คลิสต์ความคืบหน้า</h2>
+        <div class="checklist-grid" id="checklistGrid"></div>
+      </div>
+
+      <div class="card">
+        <h2>ข้อมูลแปลงที่ดิน</h2>
+        <form id="parcelForm">
+          <div class="form-grid">
+            <div class="form-row"><label>เลขโฉนด</label><input id="p_deed_no" value="${p.deed_no || ""}"></div>
+            <div class="form-row"><label>เลขที่ดิน</label><input id="p_parcel_no" value="${p.parcel_no || ""}"></div>
+            <div class="form-row"><label>ระวาง</label><input id="p_sheet" value="${p.survey_sheet_no || ""}"></div>
+            <div class="form-row"><label>ตำบล</label><input id="p_sub_district" value="${p.sub_district || ""}"></div>
+            <div class="form-row"><label>อำเภอ</label><input id="p_district" value="${p.district || ""}"></div>
+            <div class="form-row"><label>จังหวัด</label><input id="p_province" value="${p.province || ""}"></div>
+          </div>
+          <div class="form-row">
+            <label>ลิงก์โลเคชั่น (เช่น จาก Google Maps)</label>
+            <input id="p_location_url" type="url" placeholder="https://maps.google.com/?q=..." value="${p.location_url ? p.location_url.replace(/"/g, "&quot;") : ""}">
+            ${p.location_url ? `<a href="${p.location_url}" target="_blank" rel="noopener" class="location-link" style="margin-top:6px;">📍 เปิดแผนที่นำทาง</a>` : ""}
+          </div>
+          <button type="submit" class="btn btn-outline btn-sm">บันทึกข้อมูลแปลง</button>
+        </form>
+
+        <div style="margin-top:18px;">
+          <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#334155;">รูปภาพประกอบ (ไม่เกิน 3 รูป)</label>
+          <div id="photosBox" class="loading">กำลังโหลดรูปภาพ...</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ดำเนินการ</h2>
+        <div id="actionBox"></div>
+      </div>
+
+      <div class="card">
+        <h2>ประวัติสถานะ</h2>
+        <ul class="timeline" id="historyList"><li class="loading">กำลังโหลด...</li></ul>
+      </div>
+    `;
+
+    document.getElementById("parcelForm").addEventListener("submit", saveParcel);
+    renderChecklist();
+    renderActions();
+    loadPhotos();
+    loadHistory();
+    loadAssignmentHistory();
+  }
+
+  async function saveParcel(e) {
+    e.preventDefault();
+    const payload = {
+      deed_no: document.getElementById("p_deed_no").value || null,
+      parcel_no: document.getElementById("p_parcel_no").value || null,
+      survey_sheet_no: document.getElementById("p_sheet").value || null,
+      sub_district: document.getElementById("p_sub_district").value || null,
+      district: document.getElementById("p_district").value || null,
+      province: document.getElementById("p_province").value || null,
+      location_url: document.getElementById("p_location_url").value || null,
+    };
+    await apiFetch("/survey-cases/" + caseId + "/parcel", { method: "PATCH", body: JSON.stringify(payload) });
+    await loadCase();
+  }
+
+  // ---------------------------------------------------------------------
+  // มอบหมาย / เปลี่ยน / ย้ายช่างรังวัด + ประวัติการมอบหมาย
+  // ---------------------------------------------------------------------
+  function toggleReassignForm() {
+    const box = document.getElementById("reassignBox");
+    if (!box) return;
+    const showing = box.style.display !== "none";
+    if (showing) {
+      box.style.display = "none";
+      return;
+    }
+    const currentSurveyorId = currentCase.assigned_surveyor ? currentCase.assigned_surveyor.surveyor_id : null;
+    const options = surveyorsList
+      .filter((s) => s.id !== currentSurveyorId)
+      .map((s) => `<option value="${s.id}">${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""} — ${s.active_case_count} งาน</option>`)
+      .join("");
+    box.innerHTML = `
+      <div class="form-row" style="max-width:340px; margin-top:10px;">
+        <label>เลือกช่างรังวัดคนใหม่</label>
+        <select id="newSurveyorId">${options || '<option value="">-- ไม่มีช่างรังวัดในสำนักงานนี้ --</option>'}</select>
+      </div>
+      <div class="form-row" style="max-width:340px;">
+        <label>เหตุผลที่เปลี่ยน/มอบหมาย</label>
+        <input type="text" id="reassignReason" placeholder="เช่น ช่างเดิมติดภารกิจอื่น">
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="submitReassign()">บันทึก</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="toggleReassignForm()">ยกเลิก</button>
+    `;
+    box.style.display = "block";
+  }
+
+  async function submitReassign() {
+    const newSurveyorId = document.getElementById("newSurveyorId").value;
+    const reason = document.getElementById("reassignReason").value.trim();
+    if (!newSurveyorId) {
+      alert("กรุณาเลือกช่างรังวัด");
+      return;
+    }
+    if (!reason) {
+      alert("กรุณาระบุเหตุผล");
+      return;
+    }
+    try {
+      await apiFetch("/survey-cases/" + caseId + "/reassign", {
+        method: "POST",
+        body: JSON.stringify({ new_surveyor_id: newSurveyorId, reason }),
+      });
+      document.getElementById("reassignBox").style.display = "none";
+      await loadCase();
+      await loadAssignmentHistory();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function loadAssignmentHistory() {
+    const list = document.getElementById("assignHistoryList");
+    if (!list) return;
+    const history = (await apiFetch("/survey-cases/" + caseId + "/assignments")) || [];
+    if (history.length === 0) {
+      list.innerHTML = `<li>ยังไม่เคยมอบหมายช่างรังวัด</li>`;
+      return;
+    }
+    list.innerHTML = history
+      .map((h) => {
+        const name = h.surveyor_name + (h.nickname ? " (" + h.nickname + ")" : "");
+        const period = h.is_active
+          ? "กำลังรับผิดชอบ ตั้งแต่ " + fmtDate(h.assigned_at)
+          : fmtDate(h.assigned_at) + " &rarr; " + fmtDate(h.unassigned_at);
+        const by = h.assigned_by_name ? " · มอบหมายโดย " + h.assigned_by_name : "";
+        const reason = h.reason ? `<div>เหตุผล: ${h.reason}</div>` : "";
+        return `<li>${h.is_active ? "✅ " : ""}${name}${by}<div class="ts">${period}</div>${reason}</li>`;
+      })
+      .join("");
+  }
+
+  // ---------------------------------------------------------------------
+  // เช็คลิสต์ความคืบหน้า
+  // ---------------------------------------------------------------------
+  function renderChecklist() {
+    const grid = document.getElementById("checklistGrid");
+    grid.innerHTML = CHECKLIST_DEFS.map((d) => {
+      const value = currentCase[d.key];
+      return `
+        <div class="checklist-item">
+          <div class="ci-label">${d.label}</div>
+          <div class="segmented">
+            <button type="button" class="seg-btn pos ${value === d.pos ? "active" : ""}" onclick="setChecklist('${d.key}','${d.pos}')">${d.posLabel}</button>
+            <button type="button" class="seg-btn neg ${value === d.neg ? "active" : ""}" onclick="setChecklist('${d.key}','${d.neg}')">${d.negLabel}</button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  async function setChecklist(key, value) {
+    try {
+      await apiFetch("/survey-cases/" + caseId + "/checklist", { method: "PATCH", body: JSON.stringify({ [key]: value }) });
+      currentCase[key] = value;
+      renderChecklist();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // รูปภาพประกอบข้อมูลแปลง
+  // ---------------------------------------------------------------------
+  async function loadPhotos() {
+    const box = document.getElementById("photosBox");
+    const docs = (await apiFetch("/survey-cases/" + caseId + "/documents")) || [];
+    const slots = [];
+    for (let i = 0; i < 3; i++) {
+      const doc = docs[i];
+      if (doc) {
+        slots.push(`
+          <div class="photo-slot">
+            <img id="photo-img-${doc.id}" alt="รูปแปลงที่ดิน">
+            <button type="button" class="photo-remove" onclick="removePhoto('${doc.id}')" title="ลบรูปนี้">&times;</button>
+          </div>`);
+      } else if (i === docs.length) {
+        slots.push(`
+          <label class="photo-slot empty" title="เพิ่มรูปภาพ">
+            +
+            <input type="file" accept="image/*" style="display:none" onchange="uploadPhoto(event)">
+          </label>`);
+      } else {
+        slots.push(`<div class="photo-slot" style="border-style:dashed; opacity:0.35;"></div>`);
+      }
+    }
+    box.innerHTML = `<div class="photo-grid">${slots.join("")}</div>`;
+
+    for (const doc of docs) {
+      const url = await fetchAuthedBlobUrl(doc.file_url);
+      const img = document.getElementById("photo-img-" + doc.id);
+      if (img && url) img.src = url;
+    }
+  }
+
+  async function uploadPhoto(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      await apiUpload("/survey-cases/" + caseId + "/documents", file);
+      await loadPhotos();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function removePhoto(docId) {
+    if (!confirm("ลบรูปนี้หรือไม่?")) return;
+    try {
+      await apiFetch("/case-documents/" + docId, { method: "DELETE" });
+      await loadPhotos();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // ดำเนินการ: เปลี่ยนสถานะ (รวม "ถอนจ่ายแล้ว" ไว้ในดรอปดาวน์เดียวกัน — จำกัดสิทธิ์ที่ backend)
+  // ---------------------------------------------------------------------
+  function renderActions() {
+    const box = document.getElementById("actionBox");
+    let html = "";
+
+    let nextOptions = TRANSITIONS[currentCase.status] || [];
+    if (!canManage()) {
+      // "ถอนจ่ายแล้ว" จำกัดเฉพาะผู้บริหาร/ผู้ดูแลระบบเสมอ ไม่ว่าจะมาจากสถานะไหน
+      nextOptions = nextOptions.filter((s) => s !== "CLOSED");
+      // ส่วนการ "เปิดเรื่องที่ถอนจ่ายแล้วกลับมาแก้ไข" (คือตอนอยู่สถานะ CLOSED เท่านั้น) ก็จำกัดเช่นกัน — แต่การ
+      // ตั้งค่า REWORK_REQUIRED จากสถานะอื่น (เช่น รังวัดเสร็จแล้ว) ไม่ได้จำกัดสิทธิ์นี้ ให้คงไว้ตามปกติ
+      if (currentCase.status === "CLOSED") nextOptions = nextOptions.filter((s) => s !== "REWORK_REQUIRED");
+    }
+
+    if (nextOptions.length > 0) {
+      html += `
+        <div class="form-row" style="max-width:320px;">
+          <label>เปลี่ยนสถานะ</label>
+          <select id="nextStatus">
+            ${nextOptions.map((s) => `<option value="${s}">${ACTION_OPTION_LABELS[s] || STATUS_LABELS[s] || s}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-row" style="max-width:320px;">
+          <label>เหตุผล (ถ้ามี)</label>
+          <input type="text" id="statusReason">
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="changeStatus()">บันทึกการเปลี่ยนสถานะ</button>
+      `;
+    }
+
+    if (!html) html = `<div class="subtitle" style="margin:0;">ไม่มีการดำเนินการที่ทำได้ในสถานะปัจจุบันสำหรับบทบาทของท่าน</div>`;
+    box.innerHTML = html;
+  }
+
+  async function changeStatus() {
+    const newStatus = document.getElementById("nextStatus").value;
+    const reason = document.getElementById("statusReason").value || null;
+    if (currentCase.status === "CLOSED" && newStatus === "REWORK_REQUIRED") {
+      if (!confirm("ยืนยันเปิดเรื่องที่ถอนจ่ายแล้วกลับมาแก้ไข/รังวัดซ้ำ?\nสถานะจะเปลี่ยนเป็น \"ต้องแก้ไข/รังวัดซ้ำ\" จากนั้นจะเลือกสถานะถัดไปได้ตามความเหมาะสม (เช่น รอการรังวัด, เลื่อนนัด, นัดตรวจสอบใหม่ ฯลฯ)")) {
+        return;
+      }
+    }
+    try {
+      await apiFetch("/survey-cases/" + caseId + "/status", {
+        method: "PATCH",
+        body: JSON.stringify({ new_status: newStatus, reason }),
+      });
+      await loadCase();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function loadHistory() {
+    const list = document.getElementById("historyList");
+    const history = await apiFetch("/survey-cases/" + caseId + "/history");
+    if (!history || history.length === 0) {
+      list.innerHTML = `<li>ยังไม่มีประวัติ</li>`;
+      return;
+    }
+    list.innerHTML = history
+      .map((h) => {
+        const from = h.previous_status ? (STATUS_LABELS[h.previous_status] || h.previous_status) + " &rarr; " : "";
+        const to = STATUS_LABELS[h.new_status] || h.new_status;
+        const who = h.changed_by_name ? " โดย " + h.changed_by_name : "";
+        const reason = h.reason ? `<div>เหตุผล: ${h.reason}</div>` : "";
+        return `<li>${from}${to}${who}${reason}<div class="ts">${fmtDate(h.changed_at)}</div></li>`;
+      })
+      .join("");
+  }
+
+  init();
+</script>
+</body>
+</html>

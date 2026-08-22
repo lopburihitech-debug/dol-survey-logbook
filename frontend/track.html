@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ติดตามงานรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="track-wrap">
+  <div class="track-header">
+    <img src="/img/logo-96.png" alt="ตราสัญลักษณ์">
+    <h1>ติดตามงานรังวัดที่ดิน</h1>
+    <p class="subtitle">สมุดช่างรังวัดออนไลน์ — สำหรับประชาชนผู้ขอรังวัด</p>
+  </div>
+
+  <div class="track-container">
+
+    <!-- ฟอร์มค้นหา -->
+    <div class="track-card" id="searchCard">
+      <h2 style="margin-top:0;">ตรวจสอบสถานะคำขอรังวัด</h2>
+      <p class="subtitle" style="margin-bottom:18px;">กรอกเลขที่คำขอ (รว.19) และเบอร์โทรศัพท์ผู้ขอ 4 ตัวท้าย ที่ให้ไว้ตอนยื่นคำขอ</p>
+      <form id="trackForm">
+        <div class="form-row">
+          <label>เลขที่คำขอ (รว.19)</label>
+          <input type="text" id="caseCode" placeholder="เช่น 123/2569" required autocomplete="off" autocapitalize="characters">
+        </div>
+        <div class="form-row">
+          <label>เบอร์โทรศัพท์ผู้ขอ 4 ตัวท้าย</label>
+          <input type="text" id="phoneLast4" placeholder="เช่น 5678" required inputmode="numeric" maxlength="4" autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary" id="searchBtn">ตรวจสอบสถานะ</button>
+        <div id="errorBox" class="error-text" style="display:none;"></div>
+      </form>
+      <div class="hint-box">
+        <b>หาเลขที่คำขอ (รว.19) ไม่เจอ?</b><br>
+        เลขที่คำขอจะอยู่บนใบรับเรื่องที่เจ้าหน้าที่มอบให้ตอนยื่นคำขอรังวัด หรือสอบถามได้ที่สำนักงานที่ดินที่ยื่นเรื่องไว้
+      </div>
+    </div>
+
+    <!-- ผลการค้นหา -->
+    <div class="track-card" id="resultCard" style="display:none;">
+      <div class="track-result-head">
+        <div>
+          <div class="track-case-code" id="rCaseCode"></div>
+          <div class="subtitle" style="margin:2px 0 0;" id="rSurveyType"></div>
+        </div>
+        <span class="badge" id="rStatusBadge"></span>
+      </div>
+
+      <div id="stageBarWrap"></div>
+
+      <div class="info-grid" style="margin-bottom:16px;">
+        <div><div class="k">ผู้ขอ</div><div id="rRequester"></div></div>
+        <div><div class="k">สำนักงานที่ดิน</div><div id="rOffice"></div></div>
+        <div><div class="k">วันที่รับเรื่อง</div><div id="rReceived"></div></div>
+        <div><div class="k">วันนัดรังวัด</div><div id="rAppointment"></div></div>
+        <div><div class="k">กำหนดแล้วเสร็จ</div><div id="rDue"></div></div>
+      </div>
+
+      <h2 style="font-size:14px;">ความเคลื่อนไหวของคำขอ</h2>
+      <ul class="timeline" id="rTimeline"></ul>
+
+      <div class="track-back" style="margin-top:16px;">
+        <a id="searchAgainBtn" style="color:var(--primary);">&larr; ค้นหาคำขออื่น</a>
+      </div>
+    </div>
+
+    <div class="track-back">
+      <a href="/login.html">เข้าสู่ระบบสำหรับเจ้าหน้าที่</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtDateOnly(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
+}
+function fmtDate(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) +
+    " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+}
+
+const STAGE_SEQUENCE = [
+  { n: 1, label: "รับเรื่อง" },
+  { n: 2, label: "มอบหมายช่าง" },
+  { n: 3, label: "นัดหมายรังวัด" },
+  { n: 4, label: "ดำเนินการ" },
+  { n: 5, label: "เสร็จสิ้น" },
+];
+
+function renderStageBar(stage, isCancelled) {
+  if (isCancelled) {
+    return `<div class="stage-bar cancelled"><div class="stage-step current">
+      <div class="dot">&times;</div><div class="lbl">คำขอถูกยกเลิก</div>
+    </div></div>`;
+  }
+  const steps = STAGE_SEQUENCE.map((s) => {
+    let cls = "stage-step";
+    if (s.n < stage) cls += " done";
+    else if (s.n === stage) cls += " current";
+    const icon = s.n < stage ? "&#10003;" : s.n;
+    return `<div class="${cls}"><div class="line"></div><div class="dot">${icon}</div><div class="lbl">${s.label}</div></div>`;
+  }).join("");
+  return `<div class="stage-bar">${steps}</div>`;
+}
+
+function statusBadgeClass(status, isCancelled) {
+  if (isCancelled) return "badge status-CANCELLED";
+  return "badge status-" + status;
+}
+
+document.getElementById("trackForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const caseCode = document.getElementById("caseCode").value.trim();
+  const phoneLast4 = document.getElementById("phoneLast4").value.trim();
+  const errorBox = document.getElementById("errorBox");
+  const searchBtn = document.getElementById("searchBtn");
+  errorBox.style.display = "none";
+  searchBtn.disabled = true;
+  searchBtn.textContent = "กำลังตรวจสอบ...";
+
+  try {
+    const params = new URLSearchParams({ case_code: caseCode, phone_last4: phoneLast4 });
+    const res = await fetch("/api/v1/public/track?" + params.toString());
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.error && data.error.message) || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+
+    document.getElementById("rCaseCode").textContent = data.case_code;
+    document.getElementById("rSurveyType").textContent = data.survey_type || "-";
+    const badge = document.getElementById("rStatusBadge");
+    badge.className = statusBadgeClass(data.status, data.is_cancelled);
+    badge.textContent = data.status_label;
+
+    document.getElementById("stageBarWrap").innerHTML = renderStageBar(data.stage, data.is_cancelled);
+
+    document.getElementById("rRequester").textContent = data.requester_name || "-";
+    document.getElementById("rOffice").textContent = data.office_name || "-";
+    document.getElementById("rReceived").textContent = fmtDateOnly(data.received_date);
+    document.getElementById("rAppointment").textContent = fmtDateOnly(data.appointment_date);
+    document.getElementById("rDue").textContent = fmtDateOnly(data.due_date);
+
+    const timelineEl = document.getElementById("rTimeline");
+    if (data.timeline && data.timeline.length) {
+      timelineEl.innerHTML = data.timeline
+        .slice()
+        .reverse()
+        .map((t) => `<li><div>${t.status_label}</div><div class="ts">${fmtDate(t.changed_at)}</div></li>`)
+        .join("");
+    } else {
+      timelineEl.innerHTML = `<li>ยังไม่มีความเคลื่อนไหว</li>`;
+    }
+
+    document.getElementById("searchCard").style.display = "none";
+    document.getElementById("resultCard").style.display = "block";
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.style.display = "block";
+  } finally {
+    searchBtn.disabled = false;
+    searchBtn.textContent = "ตรวจสอบสถานะ";
+  }
+});
+
+document.getElementById("searchAgainBtn").addEventListener("click", () => {
+  document.getElementById("resultCard").style.display = "none";
+  document.getElementById("searchCard").style.display = "block";
+  document.getElementById("caseCode").value = "";
+  document.getElementById("phoneLast4").value = "";
+  document.getElementById("errorBox").style.display = "none";
+  document.getElementById("caseCode").focus();
+});
+</script>
+</body>
+</html>

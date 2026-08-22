@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <h1>Dashboard</h1>
+  <div class="subtitle">ภาพรวมงานรังวัดตามสิทธิ์ของท่าน</div>
+
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="loading">กำลังโหลดข้อมูล...</div>
+  </div>
+
+  <div id="provinceSection" style="display:none;">
+    <h2 style="margin:24px 0 12px;">ภาพรวมตามจังหวัดและสาขา</h2>
+    <div id="provinceCards"></div>
+  </div>
+
+  <div class="card">
+    <h2>สัดส่วนสถานะงานทั้งหมด</h2>
+    <div id="statusDonut"><div class="loading">กำลังโหลด...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>งานล่าสุด</h2>
+    <div class="table-scroll">
+    <table id="recentTable">
+      <thead>
+        <tr><th>รว.19</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>วันรับเรื่อง</th><th>สถานะ</th></tr>
+      </thead>
+      <tbody><tr><td colspan="5" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/charts.js"></script>
+<script>
+  requireAuth();
+
+  // สีของแต่ละสถานะให้ตรงกับสีตระกูลเดียวกับ badge สถานะที่ใช้ทั่วระบบ (ดู .badge.status-* ใน css/style.css)
+  // เพื่อให้ผู้ใช้จำสีแล้วเชื่อมโยงความหมายได้ทันทีไม่ว่าจะเห็นที่หน้าไหน
+  const STATUS_CHART_COLORS = {
+    RECEIVED: "#0E6B45", WAITING_ASSIGNMENT: "#0E6B45",
+    ASSIGNED: "#8A5A00", APPOINTED: "#8A5A00", IN_SURVEY: "#8A5A00",
+    WAITING_DOCUMENT: "#6b21a8", WAITING_ANNOUNCEMENT: "#6b21a8", ON_HOLD: "#6b21a8", RE_APPOINTMENT_NEEDED: "#6b21a8",
+    PENDING_REVIEW: "#1d4ed8", PENDING_APPROVAL: "#1d4ed8", SURVEY_DONE: "#1d4ed8",
+    COMPLETED: "#1D8A4E", CLOSED: "#1D8A4E",
+    CANCELLED: "#B3261E", POSTPONED: "#B3261E", REWORK_REQUIRED: "#B3261E", SURVEY_SKIPPED: "#B3261E",
+  };
+
+  async function init() {
+    const user = await renderTopbar("dashboard");
+    if (!user) return;
+
+    // ช่างรังวัดไม่มีลิงก์ "Dashboard" ในเมนูบนแล้ว (ดู renderTopbar ใน api.js) แต่ยังอาจมาถึงหน้านี้ได้จากการ
+    // ล็อกอิน (login.html พาไป /dashboard.html เสมอไม่ว่าบทบาทใด) หรือลิงก์เก่าที่บันทึกไว้ — ส่งต่อไปหน้าสรุป
+    // ผลงานของตัวเอง (surveyor-profile.html) ทันที ซึ่งเป็นหน้าที่มีประโยชน์กับช่างรังวัดมากกว่า Dashboard ทั่วไป
+    if (user.role === "surveyor") {
+      const surveyors = (await apiFetch("/surveyors")) || [];
+      const mine = surveyors.find((s) => s.user_id === user.id);
+      if (mine) {
+        window.location.replace("/surveyor-profile.html?id=" + mine.id);
+        return;
+      }
+      // ไม่พบข้อมูลช่างรังวัดที่ตรงกับบัญชีนี้ (กรณีผิดปกติ) — แสดง dashboard ทั่วไปแทนดีกว่าค้างหน้าเปล่า
+    }
+
+    await loadSummary();
+    await loadProvinceBreakdown();
+    await loadStatusDonut();
+    await loadRecentCases();
+  }
+
+  async function loadProvinceBreakdown() {
+    const offices = await apiFetch("/dashboard/by-office");
+    const section = document.getElementById("provinceSection");
+    // แสดงส่วนนี้เฉพาะเมื่อมีมากกว่า 1 สำนักงานให้เทียบ (ผู้ดูแลระบบ/ผู้บริหารเห็นหลายจังหวัด/สาขา) —
+    // หัวหน้าช่างที่เห็นแค่สำนักงานตัวเอง หรือช่างรังวัด ไม่มีอะไรให้เทียบ จึงไม่ต้องแสดงส่วนนี้เลย
+    if (!offices || offices.length <= 1) return;
+
+    const groups = groupOfficesByProvince(offices);
+    document.getElementById("provinceCards").innerHTML = groups
+      .map((g, gi) => {
+        const total = g.offices.reduce((s, o) => s + o.total_cases, 0);
+        const pending = g.offices.reduce((s, o) => s + o.pending_cases, 0);
+        const overdue = g.offices.reduce((s, o) => s + o.overdue_cases, 0);
+        return `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+            <h3 style="margin:0; color:var(--primary); font-size:15px;">จังหวัด${g.province}</h3>
+            <div style="font-size:12.5px; color:var(--text-muted);">
+              งานทั้งหมด <b style="color:var(--text);">${total}</b>
+              &nbsp;·&nbsp; ค้าง <b style="color:var(--warning);">${pending}</b>
+              &nbsp;·&nbsp; เกินกำหนด <b style="color:var(--danger);">${overdue}</b>
+              &nbsp;·&nbsp; ${g.offices.length} สำนักงาน/สาขา
+            </div>
+          </div>
+          <div id="officeChart-${gi}"></div>
+        </div>`;
+      })
+      .join("");
+
+    groups.forEach((g, gi) => {
+      const rows = g.offices.map((o) => ({ ...o, label: officeShortLabel(o.office_name) }));
+      renderOfficeBarChart(document.getElementById(`officeChart-${gi}`), rows);
+    });
+
+    section.style.display = "block";
+  }
+
+  async function loadStatusDonut() {
+    const rows = await apiFetch("/dashboard/status-breakdown");
+    if (!rows) return;
+    const segments = rows.map((r) => ({
+      label: STATUS_LABELS[r.status] || r.status,
+      count: r.count,
+      color: STATUS_CHART_COLORS[r.status] || "#94a3b8",
+    }));
+    renderDonutChart(document.getElementById("statusDonut"), segments);
+  }
+
+  async function loadSummary() {
+    const s = await apiFetch("/dashboard/summary");
+    if (!s) return;
+    document.getElementById("kpiGrid").innerHTML = `
+      <div class="kpi-card">
+        <div class="value">${s.total_cases}</div>
+        <div class="label">งานทั้งหมด</div>
+      </div>
+      <div class="kpi-card warn">
+        <div class="value">${s.pending_cases}</div>
+        <div class="label">งานค้าง (ยังไม่ปิด)</div>
+      </div>
+      <div class="kpi-card danger">
+        <div class="value">${s.overdue_cases}</div>
+        <div class="label">เกินกำหนด (วันทำการ)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="value">${s.pending_review_cases}</div>
+        <div class="label">รอตรวจ QC</div>
+      </div>
+    `;
+  }
+
+  async function loadRecentCases() {
+    const [cases, types] = await Promise.all([
+      apiFetch("/survey-cases"),
+      apiFetch("/survey-types"),
+    ]);
+    if (!cases) return;
+    const typeMap = {};
+    (types || []).forEach((t) => (typeMap[t.id] = t.name));
+
+    const tbody = document.querySelector("#recentTable tbody");
+    if (cases.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">ยังไม่มีเรื่องในระบบ</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = cases
+      .slice(0, 10)
+      .map(
+        (c) => `
+      <tr class="clickable" onclick="window.location.href='/case.html?id=${c.id}'">
+        <td>${c.case_code}</td>
+        <td>${c.requester_name}</td>
+        <td>${typeMap[c.survey_type_id] || "-"}</td>
+        <td>${fmtDate(c.received_date)}</td>
+        <td>${statusBadge(c.status)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
+  init();
+</script>
+</body>
+</html>

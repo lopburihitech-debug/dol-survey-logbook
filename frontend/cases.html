@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>รายการงานรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>รายการงานรังวัด</h1>
+      <div class="subtitle">ค้นหา รว.19 หรือชื่อผู้ขอ และกรองตามสถานะ</div>
+    </div>
+    <button class="btn btn-primary" id="newCaseBtn" style="display:none;">+ รับเรื่อง รว.19 ใหม่</button>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="ค้นหา รว.19 หรือชื่อผู้ขอ...">
+      <select id="statusFilter">
+        <option value="">ทุกสถานะ</option>
+      </select>
+      <select id="typeFilter">
+        <option value="">ทุกประเภทงาน</option>
+      </select>
+      <select id="surveyorFilter">
+        <option value="">ช่างรังวัดทั้งหมด</option>
+        <option value="unassigned">ยังไม่มอบหมาย</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="loadCases()">ค้นหา</button>
+      <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้างตัวกรอง</button>
+    </div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>รว.19</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>เกินนัดรังวัด</th><th>เช็คลิสต์</th><th>สถานะ</th><th id="manageColHeader" style="display:none;">จัดการ</th></tr>
+      </thead>
+      <tbody id="casesBody"><tr><td colspan="9" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: แก้ไขเรื่อง (แอดมิน/ผู้บริหาร/ผู้ดูแลจังหวัด) -->
+<div class="modal-backdrop" id="editCaseModal" style="display:none;">
+  <div class="modal">
+    <h3>แก้ไขเรื่อง รว.19</h3>
+    <form id="editCaseForm">
+      <div class="form-row">
+        <label>เลข รว.19</label>
+        <input type="text" id="ec_caseCode" required>
+      </div>
+      <div class="form-row">
+        <label>สำนักงาน</label>
+        <select id="ec_officeId" required></select>
+      </div>
+      <div class="form-row">
+        <label>ประเภทงาน</label>
+        <select id="ec_surveyTypeId" required></select>
+      </div>
+      <div class="form-row">
+        <label>ชื่อผู้ขอ</label>
+        <input type="text" id="ec_requesterName" required>
+      </div>
+      <div class="form-row">
+        <label>เบอร์ติดต่อ</label>
+        <input type="text" id="ec_requesterContact">
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>วันที่รับเรื่อง</label>
+          <input type="date" id="ec_receivedDate" required>
+        </div>
+        <div class="form-row">
+          <label>วันครบกำหนด (ถ้ามี)</label>
+          <input type="date" id="ec_dueDate">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>วันที่นัดรังวัด (ถ้ามี)</label>
+        <input type="date" id="ec_appointmentDate">
+      </div>
+      <div class="form-row">
+        <label>ความสำคัญ</label>
+        <input type="text" id="ec_priority" placeholder="เช่น normal, urgent">
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึกการแก้ไข</button>
+        <button type="button" class="btn btn-outline" onclick="closeEditModal()">ยกเลิก</button>
+      </div>
+      <div id="editCaseError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: ยืนยันลบเรื่อง — ต้องพิมพ์ YES เพื่อยืนยันเนื่องจากเป็นการลบถาวร ทำคืนไม่ได้ -->
+<div class="modal-backdrop" id="deleteCaseModal" style="display:none;">
+  <div class="modal">
+    <h3 style="color:var(--danger);">ยืนยันลบเรื่อง รว.19</h3>
+    <p style="font-size:13.5px; color:var(--text);">
+      กำลังจะลบเรื่อง <strong id="dc_caseCode">-</strong> อย่างถาวร ข้อมูลที่เกี่ยวข้องทั้งหมด (การมอบหมาย รูปภาพ
+      แผนที่หมุด ประวัติสถานะ ฯลฯ) จะถูกลบไปด้วย <strong>การลบนี้ทำคืนไม่ได้</strong>
+    </p>
+    <div class="form-row">
+      <label>พิมพ์ <strong>YES</strong> เพื่อยืนยันการลบ</label>
+      <input type="text" id="dc_confirmInput" autocomplete="off" placeholder="YES">
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-danger" id="dc_confirmBtn" disabled>ลบถาวร</button>
+      <button type="button" class="btn btn-outline" onclick="closeDeleteModal()">ยกเลิก</button>
+    </div>
+    <div id="deleteCaseError" class="error-text" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- Modal: สร้างเรื่องใหม่ -->
+<div class="modal-backdrop" id="newCaseModal" style="display:none;">
+  <div class="modal">
+    <h3>รับเรื่อง รว.19 ใหม่</h3>
+    <form id="newCaseForm">
+      <div class="form-row">
+        <label>เลข รว.19</label>
+        <input type="text" id="caseCode" required placeholder="เช่น 59/2569">
+      </div>
+      <div class="form-row">
+        <label>ชื่อผู้ขอ</label>
+        <input type="text" id="requesterName" required>
+      </div>
+      <div class="form-row">
+        <label>เบอร์ติดต่อ</label>
+        <input type="text" id="requesterContact">
+      </div>
+      <div class="form-row" style="position:relative;">
+        <label>ประเภทงาน</label>
+        <input type="text" id="surveyTypeSearch" placeholder="พิมพ์ค้นหา หรือพิมพ์ชื่อใหม่เพื่อเพิ่ม..." autocomplete="off">
+        <input type="hidden" id="surveyTypeId">
+        <div id="surveyTypeDropdown" class="combo-dropdown" style="display:none;"></div>
+      </div>
+      <div class="form-row">
+        <label>ช่างรังวัดที่รับผิดชอบ (ถ้ามี)</label>
+        <select id="assignSurveyorId">
+          <option value="">-- ยังไม่มอบหมาย --</option>
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>วันที่รับเรื่อง</label>
+          <input type="date" id="receivedDate" required>
+        </div>
+        <div class="form-row">
+          <label>วันที่นัดรังวัด (ถ้ามี)</label>
+          <input type="date" id="appointmentDate">
+        </div>
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" onclick="closeModal()">ยกเลิก</button>
+      </div>
+      <div id="newCaseError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let typeMap = {};
+  let officeId = null;
+  let allTypes = [];
+  let allOffices = [];
+
+  // สิทธิ์แก้ไข/ลบเรื่อง — ต้องตรงกับ require_roles ฝั่ง backend เป๊ะๆ (แก้ไข: PATCH /survey-cases/<id>,
+  // ลบ: DELETE /survey-cases/<id>) แก้ไขให้สิทธิ์กว้างกว่าลบเพราะลบเป็นการทำลายข้อมูลถาวร ทำคืนไม่ได้
+  let canEditCase = false;
+  let canDeleteCase = false;
+
+  async function init() {
+    const user = await renderTopbar("cases");
+    if (user && ["system_admin", "administrator", "province_admin"].includes(user.role)) {
+      document.getElementById("newCaseBtn").style.display = "inline-block";
+      officeId = user.office_id;
+      await loadSurveyorsForAssign();
+    }
+    if (user) {
+      canEditCase = ["system_admin", "administrator", "province_admin"].includes(user.role);
+      canDeleteCase = ["system_admin", "province_admin"].includes(user.role);
+    }
+    if (canEditCase || canDeleteCase) {
+      document.getElementById("manageColHeader").style.display = "";
+      allOffices = (await apiFetch("/offices")) || [];
+      setupEditOfficeOptions();
+    }
+    await loadStatusOptions();
+    await loadSurveyorsForFilter();
+    await loadSurveyTypes();
+    await loadCases();
+  }
+
+  // ตัวกรอง "ช่างรังวัด" ในหน้ารายการ — ไม่ส่ง office_id เพื่อให้ backend กำหนดขอบเขตเองตามสิทธิ์ผู้ใช้
+  // (system_admin/administrator เห็นทุกสำนักงาน ส่วนบทบาทอื่นเห็นเฉพาะสำนักงานตนอยู่แล้ว) ต่างจาก
+  // loadSurveyorsForAssign ที่ใช้กับ modal สร้างเรื่องใหม่ ซึ่งต้องระบุ office_id ของเรื่องที่กำลังสร้าง
+  async function loadSurveyorsForFilter() {
+    const surveyors = (await apiFetch("/surveyors")) || [];
+    const select = document.getElementById("surveyorFilter");
+    select.innerHTML =
+      `<option value="">ช่างรังวัดทั้งหมด</option>` +
+      `<option value="unassigned">ยังไม่มอบหมาย</option>` +
+      surveyors
+        .map(
+          (s) => `<option value="${s.id}">${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""}</option>`
+        )
+        .join("");
+  }
+
+  async function loadSurveyorsForAssign() {
+    const surveyors = (await apiFetch("/surveyors" + (officeId ? "?office_id=" + officeId : ""))) || [];
+    const select = document.getElementById("assignSurveyorId");
+    select.innerHTML =
+      `<option value="">-- ยังไม่มอบหมาย --</option>` +
+      surveyors
+        .map(
+          (s) =>
+            `<option value="${s.id}">${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""} — ${s.active_case_count} งาน</option>`
+        )
+        .join("");
+  }
+
+  // สถานะที่เรื่องจริงในระบบนี้เป็นได้ (ตรงกับ ALLOWED_TRANSITIONS ฝั่ง backend) — เรียงตามลำดับ workflow จริง
+  // STATUS_LABELS เต็มใน api.js มีสถานะเก่าจาก Blueprint เดิม (เช่น กำลังปฏิบัติงาน, รอตรวจ QC, เสร็จสิ้น) ที่ไม่ได้
+  // ใช้งานในเวอร์ชันนี้แล้ว เก็บไว้เผื่อแสดงผลข้อมูลเก่าเท่านั้น จึงไม่เอามาใส่ในตัวกรองเพราะเลือกแล้วจะไม่พบเรื่องใดๆ เลย
+  const REACHABLE_CASE_STATUSES = [
+    "RECEIVED", "WAITING_ASSIGNMENT", "ASSIGNED", "APPOINTED", "SURVEY_DONE",
+    "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "POSTPONED", "REWORK_REQUIRED", "CLOSED", "CANCELLED",
+  ];
+
+  function loadStatusOptions() {
+    const select = document.getElementById("statusFilter");
+    REACHABLE_CASE_STATUSES.forEach((value) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = STATUS_LABELS[value] || value;
+      select.appendChild(opt);
+    });
+  }
+
+  async function loadSurveyTypes() {
+    allTypes = (await apiFetch("/survey-types")) || [];
+    allTypes.forEach((t) => (typeMap[t.id] = t.name));
+    loadTypeFilterOptions();
+    setupEditTypeOptions();
+  }
+
+  // ตัวเลือก "ประเภทงาน" ในฟอร์มแก้ไขเรื่อง — ใช้ <select> ธรรมดา (ต่างจากฟอร์มสร้างเรื่องใหม่ที่เป็นช่องค้นหา
+  // พร้อมเพิ่มประเภทใหม่ได้) เพราะตอนแก้ไขเรื่องที่มีอยู่แล้วมักจะเลือกจากของเดิม ไม่ได้ตั้งใจเพิ่มประเภทใหม่
+  function setupEditTypeOptions() {
+    const select = document.getElementById("ec_surveyTypeId");
+    if (!select) return;
+    const sorted = [...allTypes].sort((a, b) => a.name.localeCompare(b.name, "th"));
+    select.innerHTML = sorted.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
+  }
+
+  // ตัวเลือก "สำนักงาน" ในฟอร์มแก้ไขเรื่อง — /offices ถูกจำกัดขอบเขตตามสิทธิ์ผู้ใช้จาก backend ให้อยู่แล้ว
+  // (province_admin เห็นเฉพาะสำนักงานในจังหวัดตน) จึงย้ายเรื่องออกนอกขอบเขตตัวเองไม่ได้ตั้งแต่ระดับตัวเลือกเลย
+  function setupEditOfficeOptions() {
+    const select = document.getElementById("ec_officeId");
+    if (!select) return;
+    const sorted = [...allOffices].sort((a, b) => a.name.localeCompare(b.name, "th"));
+    select.innerHTML = sorted.map((o) => `<option value="${o.id}">${o.name} (${o.province})</option>`).join("");
+  }
+
+  // ตัวกรอง "ประเภทงาน" ในหน้ารายการ — เลือกได้ว่าจะแสดงเฉพาะประเภทใด หรือแสดงทุกประเภท (ค่าเริ่มต้น)
+  // เรียงตามชื่อ ก-ฮ เพื่อให้หาง่ายเมื่อมีประเภทงานจำนวนมาก (96 รายการตามที่กรมที่ดินกำหนด)
+  function loadTypeFilterOptions() {
+    const select = document.getElementById("typeFilter");
+    const sorted = [...allTypes].sort((a, b) => a.name.localeCompare(b.name, "th"));
+    select.innerHTML =
+      `<option value="">ทุกประเภทงาน</option>` +
+      sorted.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  }
+
+  function renderTypeDropdown(filterText) {
+    const dropdown = document.getElementById("surveyTypeDropdown");
+    const q = filterText.trim();
+    const matches = q ? allTypes.filter((t) => t.name.includes(q)) : allTypes;
+    let html = matches
+      .slice(0, 50)
+      .map(
+        (t) =>
+          `<div class="combo-item" data-id="${t.id}" data-name="${escapeAttr(t.name)}">${t.name} <span style="color:var(--text-muted); font-size:11.5px;">(SLA ${t.target_days} วันทำการ)</span></div>`
+      )
+      .join("");
+    const exactMatch = allTypes.some((t) => t.name === q);
+    if (q && !exactMatch) {
+      html += `<div class="combo-item combo-add" data-add="${escapeAttr(q)}">+ เพิ่ม "${q}" เป็นประเภทงานใหม่</div>`;
+    }
+    if (!html) {
+      html = `<div class="combo-item" style="color:var(--text-muted); cursor:default;">ไม่พบประเภทงาน</div>`;
+    }
+    dropdown.innerHTML = html;
+    dropdown.style.display = "block";
+  }
+
+  document.getElementById("surveyTypeSearch").addEventListener("input", (e) => {
+    document.getElementById("surveyTypeId").value = "";
+    renderTypeDropdown(e.target.value);
+  });
+  document.getElementById("surveyTypeSearch").addEventListener("focus", (e) => renderTypeDropdown(e.target.value));
+
+  document.getElementById("surveyTypeDropdown").addEventListener("click", async (e) => {
+    const item = e.target.closest(".combo-item");
+    if (!item) return;
+    const dropdown = document.getElementById("surveyTypeDropdown");
+    if (item.dataset.add) {
+      try {
+        const created = await apiFetch("/survey-types", { method: "POST", body: JSON.stringify({ name: item.dataset.add }) });
+        if (created) {
+          if (!allTypes.some((t) => t.id === created.id)) allTypes.push(created);
+          typeMap[created.id] = created.name;
+          document.getElementById("surveyTypeId").value = created.id;
+          document.getElementById("surveyTypeSearch").value = created.name;
+        }
+      } catch (err) {
+        const errorBox = document.getElementById("newCaseError");
+        errorBox.textContent = err.message;
+        errorBox.style.display = "block";
+      }
+    } else if (item.dataset.id) {
+      document.getElementById("surveyTypeId").value = item.dataset.id;
+      document.getElementById("surveyTypeSearch").value = item.dataset.name;
+    }
+    dropdown.style.display = "none";
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#surveyTypeSearch") && !e.target.closest("#surveyTypeDropdown")) {
+      document.getElementById("surveyTypeDropdown").style.display = "none";
+    }
+  });
+
+  // สถานะที่ถือว่า "จบงานแล้ว" ไม่ต้องแสดงสถานะเกินนัด แม้จะเลยวันนัดรังวัดมานานแค่ไหนก็ตาม
+  const OVERDUE_EXCLUDED_STATUSES = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "POSTPONED", "SURVEY_DONE"]);
+
+  // แสดงป้าย "เกิน 30 วัน" / "เกิน 60 วัน" นับจากวันนัดรังวัด (appointment_date) — ใช้ติดตามเรื่องที่ค้างนาน
+  // หลังวันนัดไปแล้ว งานที่ยังไม่ครบ 30 วัน, ไม่มีวันนัดรังวัด, หรือจบงานแล้วจะไม่แสดงป้ายใดๆ (เว้นว่าง)
+  function appointmentOverdueBadge(c) {
+    if (OVERDUE_EXCLUDED_STATUSES.has(c.status)) return "-";
+    if (!c.appointment_date) return "-";
+    const appt = new Date(c.appointment_date);
+    if (isNaN(appt.getTime())) return "-";
+    const diffDays = Math.floor((new Date() - appt) / (24 * 60 * 60 * 1000));
+    if (diffDays >= 60) return `<span class="badge status-CANCELLED">เกิน 60 วัน</span>`;
+    if (diffDays >= 30) return `<span class="badge status-ASSIGNED">เกิน 30 วัน</span>`;
+    return "-";
+  }
+
+  // เช็คลิสต์ความคืบหน้า 4 รายการ (ตรงกับ CHECKLIST_DEFS ในหน้ารายละเอียดงาน case.html) — แสดงเป็นป้ายข้อความเต็ม
+  // ในตารางรายการ เพื่อให้เห็นความคืบหน้าของแต่ละเรื่องได้ชัดเจนโดยไม่ต้องเปิดเข้าไปดูทีละเรื่อง
+  const CHECKLIST_DEFS = [
+    { key: "survey_result", label: "ผลการรังวัด", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "mapping_status", label: "ขึ้นรูป", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "neighbor_status", label: "ข้างเคียง", pos: "COMPLETE", posLabel: "ครบ", neg: "WAITING_AGENCY", negLabel: "รอส่วนราชการ" },
+    { key: "announcement_status", label: "ปิดประกาศ", pos: "POSTED", posLabel: "ปิดแล้ว", neg: "WAITING", negLabel: "รอปิด" },
+  ];
+
+  function checklistFull(c) {
+    return `<div class="checklist-full">` + CHECKLIST_DEFS.map((d) => {
+      const value = c[d.key];
+      let cls = "cf-unset";
+      let stateLabel = "ยังไม่ระบุ";
+      if (value === d.pos) { cls = "cf-pos"; stateLabel = d.posLabel; }
+      else if (value === d.neg) { cls = "cf-neg"; stateLabel = d.negLabel; }
+      return `<span class="badge ${cls}">${d.label}: ${stateLabel}</span>`;
+    }).join("") + `</div>`;
+  }
+
+  function surveyorName(c) {
+    const s = c.assigned_surveyor;
+    if (!s) return `<span style="color:var(--text-muted);">ยังไม่มอบหมาย</span>`;
+    return s.full_name + (s.nickname ? ` (${s.nickname})` : "");
+  }
+
+  // ล้างตัวกรองทั้งหมด (คำค้นหา/สถานะ/ประเภทงาน/ช่างรังวัด) กลับเป็นค่าเริ่มต้น แล้วโหลดรายการทั้งหมดใหม่ทันที
+  function clearFilters() {
+    document.getElementById("searchInput").value = "";
+    document.getElementById("statusFilter").value = "";
+    document.getElementById("typeFilter").value = "";
+    document.getElementById("surveyorFilter").value = "";
+    loadCases();
+  }
+
+  async function loadCases() {
+    const params = new URLSearchParams();
+    const search = document.getElementById("searchInput").value.trim();
+    const status = document.getElementById("statusFilter").value;
+    const typeId = document.getElementById("typeFilter").value;
+    const surveyorId = document.getElementById("surveyorFilter").value;
+    if (search) params.set("search", search);
+    if (status) params.set("status", status);
+    if (typeId) params.set("survey_type_id", typeId);
+    if (surveyorId) params.set("surveyor_id", surveyorId);
+
+    const cases = await apiFetch("/survey-cases?" + params.toString());
+    const tbody = document.getElementById("casesBody");
+    const colspan = (canEditCase || canDeleteCase) ? 10 : 9;
+    if (!cases || cases.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">ไม่พบรายการที่ตรงเงื่อนไข</td></tr>`;
+      return;
+    }
+    // เก็บข้อมูลเรื่องทั้งหมดที่โหลดไว้ล่าสุด ใช้ตอนเปิดฟอร์มแก้ไข/ลบ จะได้ไม่ต้องยิง API ซ้ำ
+    window._casesById = {};
+    cases.forEach((c) => (window._casesById[c.id] = c));
+
+    tbody.innerHTML = cases
+      .map(
+        (c) => `
+      <tr class="clickable" onclick="window.location.href='/case.html?id=${c.id}'">
+        <td>${c.case_code}</td>
+        <td>${c.requester_name}</td>
+        <td>${typeMap[c.survey_type_id] || "-"}</td>
+        <td>${surveyorName(c)}</td>
+        <td>${fmtDateOnly(c.received_date)}</td>
+        <td>${fmtDateOnly(c.appointment_date)}</td>
+        <td>${appointmentOverdueBadge(c)}</td>
+        <td>${checklistFull(c)}</td>
+        <td>${statusBadge(c.status)}</td>
+        ${manageCellHtml(c)}
+      </tr>`
+      )
+      .join("");
+  }
+
+  // เซลล์ "จัดการ" ต่อแถว — กันการคลิกไม่ให้ไหลไปกระตุ้น onclick ของทั้งแถว (ซึ่งพาไปหน้ารายละเอียดเรื่อง) ด้วย
+  // stopPropagation ปุ่มลบจะแสดงเฉพาะบทบาทที่มีสิทธิ์ลบ (system_admin, province_admin) ส่วนแก้ไขกว้างกว่า
+  // (รวม administrator ด้วย) ให้ตรงกับสิทธิ์จริงฝั่ง backend เป๊ะๆ
+  function manageCellHtml(c) {
+    if (!canEditCase && !canDeleteCase) return "";
+    const editBtn = canEditCase
+      ? `<button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openEditModal('${c.id}')">แก้ไข</button>`
+      : "";
+    const deleteBtn = canDeleteCase
+      ? `<button type="button" class="btn btn-danger btn-sm" onclick="event.stopPropagation(); openDeleteModal('${c.id}')">ลบ</button>`
+      : "";
+    return `<td style="white-space:nowrap;"><div style="display:flex; gap:6px;">${editBtn}${deleteBtn}</div></td>`;
+  }
+
+  // ===== แก้ไขเรื่อง =====
+  let editingCaseId = null;
+
+  function openEditModal(caseId) {
+    const c = window._casesById && window._casesById[caseId];
+    if (!c) return;
+    editingCaseId = caseId;
+    document.getElementById("ec_caseCode").value = c.case_code || "";
+    document.getElementById("ec_officeId").value = c.office_id || "";
+    document.getElementById("ec_surveyTypeId").value = c.survey_type_id || "";
+    document.getElementById("ec_requesterName").value = c.requester_name || "";
+    document.getElementById("ec_requesterContact").value = c.requester_contact || "";
+    document.getElementById("ec_receivedDate").value = (c.received_date || "").slice(0, 10);
+    document.getElementById("ec_dueDate").value = (c.due_date || "").slice(0, 10);
+    document.getElementById("ec_appointmentDate").value = (c.appointment_date || "").slice(0, 10);
+    document.getElementById("ec_priority").value = c.priority || "";
+    document.getElementById("editCaseError").style.display = "none";
+    document.getElementById("editCaseModal").style.display = "flex";
+  }
+
+  function closeEditModal() {
+    document.getElementById("editCaseModal").style.display = "none";
+    editingCaseId = null;
+  }
+
+  document.getElementById("editCaseForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("editCaseError");
+    errorBox.style.display = "none";
+    if (!editingCaseId) return;
+
+    const payload = {
+      case_code: document.getElementById("ec_caseCode").value.trim(),
+      office_id: document.getElementById("ec_officeId").value,
+      survey_type_id: document.getElementById("ec_surveyTypeId").value,
+      requester_name: document.getElementById("ec_requesterName").value.trim(),
+      requester_contact: document.getElementById("ec_requesterContact").value.trim() || null,
+      received_date: document.getElementById("ec_receivedDate").value,
+      due_date: document.getElementById("ec_dueDate").value || null,
+      appointment_date: document.getElementById("ec_appointmentDate").value || null,
+      priority: document.getElementById("ec_priority").value.trim() || "normal",
+    };
+    try {
+      await apiFetch("/survey-cases/" + editingCaseId, { method: "PATCH", body: JSON.stringify(payload) });
+      closeEditModal();
+      await loadCases();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  // ===== ลบเรื่อง (ถาวร — ต้องพิมพ์ YES ยืนยัน) =====
+  let deletingCaseId = null;
+
+  function openDeleteModal(caseId) {
+    const c = window._casesById && window._casesById[caseId];
+    if (!c) return;
+    deletingCaseId = caseId;
+    document.getElementById("dc_caseCode").textContent = c.case_code;
+    document.getElementById("dc_confirmInput").value = "";
+    document.getElementById("dc_confirmBtn").disabled = true;
+    document.getElementById("deleteCaseError").style.display = "none";
+    document.getElementById("deleteCaseModal").style.display = "flex";
+  }
+
+  function closeDeleteModal() {
+    document.getElementById("deleteCaseModal").style.display = "none";
+    deletingCaseId = null;
+  }
+
+  document.getElementById("dc_confirmInput").addEventListener("input", (e) => {
+    document.getElementById("dc_confirmBtn").disabled = e.target.value.trim() !== "YES";
+  });
+
+  document.getElementById("dc_confirmBtn").addEventListener("click", async () => {
+    if (!deletingCaseId) return;
+    if (document.getElementById("dc_confirmInput").value.trim() !== "YES") return;
+    const errorBox = document.getElementById("deleteCaseError");
+    errorBox.style.display = "none";
+    try {
+      await apiFetch("/survey-cases/" + deletingCaseId, { method: "DELETE" });
+      closeDeleteModal();
+      await loadCases();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("newCaseBtn").addEventListener("click", () => {
+    document.getElementById("newCaseModal").style.display = "flex";
+  });
+  function closeModal() {
+    document.getElementById("newCaseModal").style.display = "none";
+    document.getElementById("newCaseError").style.display = "none";
+    document.getElementById("newCaseForm").reset();
+    document.getElementById("surveyTypeId").value = "";
+    document.getElementById("surveyTypeDropdown").style.display = "none";
+  }
+
+  document.getElementById("newCaseForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("newCaseError");
+    errorBox.style.display = "none";
+
+    const surveyTypeId = document.getElementById("surveyTypeId").value;
+    if (!surveyTypeId) {
+      errorBox.textContent = "กรุณาเลือกประเภทงานจากรายการ หรือพิมพ์ชื่อใหม่แล้วกด \"+ เพิ่ม...เป็นประเภทงานใหม่\"";
+      errorBox.style.display = "block";
+      document.getElementById("surveyTypeSearch").focus();
+      return;
+    }
+
+    try {
+      const payload = {
+        office_id: officeId,
+        case_code: document.getElementById("caseCode").value,
+        survey_type_id: surveyTypeId,
+        requester_name: document.getElementById("requesterName").value,
+        requester_contact: document.getElementById("requesterContact").value || null,
+        received_date: document.getElementById("receivedDate").value,
+        appointment_date: document.getElementById("appointmentDate").value || null,
+        surveyor_id: document.getElementById("assignSurveyorId").value || null,
+      };
+      const created = await apiFetch("/survey-cases", { method: "POST", body: JSON.stringify(payload) });
+      if (created) window.location.href = "/case.html?id=" + created.id;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("searchInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadCases();
+  });
+
+  init();
+</script>
+</body>
+</html>

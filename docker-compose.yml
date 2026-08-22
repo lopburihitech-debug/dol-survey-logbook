@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # เปลี่ยนค่านี้ก่อนใช้งานจริงเสมอ (ใช้สร้างและตรวจสอบ JWT)
+      - JWT_SECRET_KEY=CHANGE_ME_IN_PRODUCTION
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    volumes:
+      # เก็บฐานข้อมูล SQLite ไว้นอก container เพื่อไม่ให้ข้อมูลหายเมื่อ rebuild image
+      - dol_data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  dol_data:

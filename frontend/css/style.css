@@ -1,0 +1,744 @@
+/* DOL Survey Logbook — สไตล์ร่วมของทั้งระบบ (เขียนเองทั้งหมด ไม่พึ่ง CDN ภายนอก เพื่อให้ deploy ได้แม้ไม่มีอินเทอร์เน็ต)
+   ธีมสีเขียว + ทองอ่อนๆ ล้อกับตราสัญลักษณ์ประจำหน่วยงาน — ฟอนต์อ้างอิง "Leelawadee UI" ซึ่งเป็นฟอนต์ไทยที่มากับ
+   Windows 10/11 อยู่แล้ว (ออกแบบมาสำหรับ UI โดยเฉพาะ ดูทันสมัยกว่า Tahoma/Angsana มาก) จึงไม่ต้องดาวน์โหลดไฟล์ฟอนต์
+   เพิ่ม ยังคง deploy ได้แม้ไม่มีอินเทอร์เน็ตเหมือนเดิม — เครื่องที่ไม่มีฟอนต์นี้จะไล่ fallback ไปฟอนต์ระบบตามปกติ */
+:root {
+  --primary: #0E6B45;
+  --primary-dark: #0A5236;
+  --primary-light: #128F5C;
+  --accent-light: #E6F6ED;
+  --accent-border: #BEE5CE;
+  --gold: #B8892F;
+  --gold-light: #F7EFDC;
+  --text: #1f2937;
+  --text-muted: #64748b;
+  --danger: #B3261E;
+  --success: #1D8A4E;
+  --warning: #8A5A00;
+  --bg: #F3F8F5;
+  --radius: 10px;
+  --shadow-sm: 0 1px 3px rgba(15, 42, 30, 0.08);
+  --shadow-md: 0 6px 20px rgba(15, 42, 30, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Leelawadee UI", "Segoe UI Variable Text", "Segoe UI", "Noto Sans Thai", Tahoma, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--primary); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C7D6CD; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #A8BDB1; }
+
+.topbar {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  box-shadow: 0 2px 10px rgba(10, 82, 54, 0.25);
+}
+.topbar-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  position: relative;
+}
+.topbar .brand-group { display: flex; align-items: center; gap: 10px; }
+.topbar .brand-logo {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: white; object-fit: cover;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
+}
+.topbar .brand { font-weight: 700; font-size: 16px; line-height: 1.25; }
+.topbar .brand small { display: block; font-weight: 400; font-size: 11px; color: #bfe4cd; }
+
+/* แถวเมนูหลัก — ลิงก์เดี่ยวและปุ่มเปิดเมนูย่อย ('จัดการ'/'ระบบ') ใช้หน้าตาปุ่มแบบเดียวกันหมด (pill) เพื่อความ
+   สม่ำเสมอ ไอคอนหน้าป้ายชื่อช่วยให้กวาดสายตาหาเมนูที่ต้องการได้เร็วกว่าอ่านตัวหนังสือล้วนๆ */
+.topbar nav { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; position: relative; }
+/* ตั้งใจใช้ตัวเลือกลูกตรง (>) เท่านั้น — ป้องกันไม่ให้กฎสีของลิงก์เมนูหลัก (ตัวหนังสือสีขาวโปร่งแสงบนพื้นเขียว)
+   ไปทับกฎสีของลิงก์ใน .dropdown-menu ที่ซ้อนอยู่ลึกกว่า (นาว > details > div.dropdown-menu > a) ซึ่งอยู่บนพื้นขาว
+   — ถ้าเผลอใช้ตัวเลือกลูกหลานทั่วไป (space) จะได้ตัวหนังสือสีขาวบนพื้นขาวมองไม่เห็นในเมนูย่อย */
+.topbar nav > a,
+.topbar nav > details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar nav > a svg, .topbar nav > details > summary svg:not(.chevron) { width: 16px; height: 16px; flex-shrink: 0; }
+.topbar nav summary::-webkit-details-marker { display: none; }
+.topbar nav summary::marker { content: ""; }
+.topbar nav > a:hover, .topbar nav > details > summary:hover { background: rgba(255, 255, 255, 0.12); color: white; }
+.topbar nav > a.active, .topbar nav > details > summary.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+/* ตัวเลขจำนวนงานค้าง แปะท้ายป้ายเมนู (เช่น "งานของฉัน") — วงกลมแดงเล็กๆ แบบตัวเลขแจ้งเตือนทั่วไป */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.topbar .chevron { width: 13px; height: 13px; flex-shrink: 0; opacity: 0.75; transition: transform 0.15s; }
+.nav-dropdown[open] > summary .chevron, .user-menu[open] > summary .chevron { transform: rotate(180deg); }
+.nav-dropdown[open] > summary { background: rgba(255, 255, 255, 0.2); color: white; }
+
+.nav-dropdown { position: relative; }
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  min-width: 200px;
+  z-index: 40;
+}
+.dropdown-menu a, .dropdown-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.dropdown-menu a svg, .dropdown-menu button svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-muted); }
+.dropdown-menu a:hover, .dropdown-menu button:hover { background: var(--accent-light); color: var(--primary); }
+.dropdown-menu a:hover svg, .dropdown-menu button:hover svg { color: var(--primary); }
+.dropdown-menu a.active { background: var(--accent-light); color: var(--primary); font-weight: 700; }
+.dropdown-menu a.active svg { color: var(--primary); }
+.dropdown-menu button:hover { color: var(--danger); }
+.dropdown-menu button:hover svg { color: var(--danger); }
+
+/* เมนูผู้ใช้งาน (มุมขวา) — avatar วงกลม + ชื่อ/บทบาท พับเป็นดรอปดาวน์เดียวกัน แทนปุ่ม "ออกจากระบบ" ลอยเดี่ยวๆ เดิม */
+.user-menu { position: relative; }
+.user-menu summary {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 12px 5px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer; list-style: none; user-select: none;
+  transition: background 0.15s;
+}
+.user-menu summary::-webkit-details-marker { display: none; }
+.user-menu summary::marker { content: ""; }
+.user-menu summary:hover { background: rgba(255, 255, 255, 0.18); }
+.user-menu[open] summary { background: rgba(255, 255, 255, 0.18); }
+.user-menu .user-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.92); color: var(--primary-dark);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13.5px; font-weight: 700;
+}
+.user-menu .user-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1; }
+.user-menu .user-name { font-size: 13px; font-weight: 600; color: white; }
+.user-menu .badge { background: rgba(255, 255, 255, 0.22); color: white; font-size: 10.5px; padding: 1px 8px; }
+.user-menu .dropdown-menu { right: 0; left: auto; min-width: 190px; }
+
+.nav-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.4);
+  color: white;
+  border-radius: 6px;
+  width: 36px;
+  height: 32px;
+  font-size: 16px;
+  cursor: pointer;
+  order: 2;
+}
+
+.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+@media (min-width: 601px) {
+  .container { padding: 24px; }
+}
+
+@media (max-width: 768px) {
+  .nav-toggle { display: inline-block; }
+  .topbar .brand-group { order: 1; flex: 1; }
+  .topbar nav {
+    order: 3;
+    width: 100%;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    padding-top: 10px;
+  }
+  .topbar.nav-open nav { display: flex; }
+  .topbar nav > a, .topbar nav > details > summary { border-radius: 8px; padding: 10px 12px; }
+  /* บนมือถือให้เมนูย่อยกางออกในแนวตั้งแทนกล่องลอย (ใช้ <details> ตัวเดิม ไม่ต้องมี JS เพิ่ม) */
+  .nav-dropdown .dropdown-menu {
+    position: static;
+    box-shadow: none;
+    background: transparent;
+    padding: 2px 0 2px 30px;
+    min-width: 0;
+  }
+  .nav-dropdown .dropdown-menu a { color: rgba(255,255,255,0.8); padding: 8px 10px; }
+  .nav-dropdown .dropdown-menu a:hover, .nav-dropdown .dropdown-menu a.active { background: rgba(255,255,255,0.12); color: white; }
+  .nav-dropdown .dropdown-menu a.active svg { color: white; }
+  .topbar .user-box {
+    order: 4;
+    width: 100%;
+    display: none;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    padding-top: 10px;
+  }
+  .topbar.nav-open .user-box { display: block; }
+  .user-menu, .user-menu summary { width: 100%; }
+  .user-menu summary { justify-content: space-between; padding: 8px 12px; }
+  .user-menu .dropdown-menu { position: static; box-shadow: none; background: transparent; padding: 2px 0 0; }
+  .user-menu .dropdown-menu a, .user-menu .dropdown-menu button { color: rgba(255,255,255,0.8); }
+  .user-menu .dropdown-menu a:hover, .user-menu .dropdown-menu button:hover { background: rgba(255,255,255,0.12); color: white; }
+  .user-menu .dropdown-menu a svg, .user-menu .dropdown-menu button svg { color: inherit; }
+}
+
+.card {
+  background: white;
+  border: 1px solid #E7EEE9;
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+@media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .kpi-grid { grid-template-columns: 1fr; } }
+.kpi-card {
+  background: white;
+  border: 1px solid #E7EEE9;
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.kpi-card .value { font-size: 26px; font-weight: 700; color: var(--primary); }
+.kpi-card .label { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+.kpi-card.warn { border-left-color: var(--warning); }
+.kpi-card.warn .value { color: var(--warning); }
+.kpi-card.danger { border-left-color: var(--danger); }
+.kpi-card.danger .value { color: var(--danger); }
+
+h1 { font-size: 20px; color: var(--primary); margin: 0 0 4px 0; font-weight: 700; }
+h2 { font-size: 16px; color: var(--primary); margin: 0 0 12px 0; font-weight: 700; }
+.subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; background: var(--primary); color: white; padding: 9px 10px; font-weight: 600; white-space: nowrap; }
+th:first-child { border-top-left-radius: 6px; }
+th:last-child { border-top-right-radius: 6px; }
+td { padding: 8px 10px; border-bottom: 1px solid #EDF2EF; }
+tr:hover td { background: var(--accent-light); }
+tr.clickable { cursor: pointer; }
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -1px;
+}
+@media (max-width: 700px) {
+  .table-scroll table { min-width: 620px; }
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #DFE8E2;
+  color: #445064;
+}
+.badge.status-RECEIVED, .badge.status-WAITING_ASSIGNMENT { background: var(--accent-light); color: var(--primary); }
+.badge.status-ASSIGNED, .badge.status-APPOINTED, .badge.status-IN_SURVEY { background: var(--gold-light); color: var(--warning); }
+.badge.status-WAITING_DOCUMENT, .badge.status-WAITING_ANNOUNCEMENT, .badge.status-ON_HOLD { background: #F3E8FD; color: #6b21a8; }
+.badge.status-PENDING_REVIEW, .badge.status-PENDING_APPROVAL, .badge.status-SURVEY_DONE { background: #DCEBFD; color: #1d4ed8; }
+.badge.status-COMPLETED, .badge.status-CLOSED { background: #DCF3E4; color: var(--success); }
+.badge.status-CANCELLED, .badge.status-POSTPONED, .badge.status-REWORK_REQUIRED, .badge.status-SURVEY_SKIPPED { background: #FBE1DE; color: var(--danger); }
+.badge.status-RE_APPOINTMENT_NEEDED { background: #F3E8FD; color: #6b21a8; }
+
+.filters { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.filters input, .filters select {
+  padding: 7px 10px;
+  border: 1px solid #CBD5C9;
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  /* จำกัดความกว้างสูงสุดไว้ไม่ให้ <select> ขยายตามความยาวข้อความของตัวเลือกที่ยาวที่สุด (เช่น ชื่อประเภทงาน
+     ที่มีบางรายการยาวมาก) มิฉะนั้นจะดันให้แถบตัวกรองล้นขอบจอในหน้าจอมือถือ แม้จะตั้ง flex-wrap ไว้แล้วก็ตาม */
+  max-width: 100%;
+}
+.filters select {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .filters input, .filters select { flex: 1 1 100%; max-width: 100%; }
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-light) !important;
+  box-shadow: 0 0 0 3px rgba(14, 107, 69, 0.15);
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 7px;
+  border: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.btn-primary { background: var(--primary); color: white; box-shadow: 0 1px 2px rgba(10,82,54,0.25); }
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-outline { background: white; border: 1px solid var(--primary); color: var(--primary); }
+.btn-outline:hover { background: var(--accent-light); }
+.btn-success { background: var(--success); color: white; box-shadow: 0 1px 2px rgba(29,138,78,0.25); }
+.btn-success:hover { background: #146C3E; }
+.btn-danger { background: var(--danger); color: white; }
+.btn-sm { padding: 5px 10px; font-size: 12.5px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+.form-row { margin-bottom: 14px; }
+.form-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: #334155; }
+.form-row input, .form-row select, .form-row textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid #CBD5C9;
+  border-radius: 7px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+.combo-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 60;
+  background: white;
+  border: 1px solid #CBD5C9;
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  margin-top: 2px;
+}
+.combo-item { padding: 9px 11px; font-size: 13px; cursor: pointer; }
+.combo-item:hover { background: var(--accent-light); }
+.combo-add { color: var(--primary); font-weight: 600; border-top: 1px solid #E9EEF3; }
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 55%, #073523 100%);
+}
+.login-box {
+  background: white;
+  border-radius: 14px;
+  padding: 36px 34px;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.login-logo { display: flex; justify-content: center; margin-bottom: 14px; }
+.login-logo img { width: 76px; height: 76px; border-radius: 50%; box-shadow: 0 4px 14px rgba(15,42,30,0.2); }
+.login-box h1 { text-align: center; }
+.login-box .subtitle { text-align: center; }
+.login-box .btn-primary { width: 100%; margin-top: 6px; }
+@media (max-width: 480px) {
+  .login-wrap { padding: 16px; }
+  .login-box { padding: 28px 20px; }
+}
+
+/* เครดิตผู้พัฒนา — วางไว้ใต้กล่อง login บนพื้นเขียวไล่เฉด ให้เด่นแต่ไม่แย่งซีนฟอร์มเข้าสู่ระบบ */
+.dev-credit {
+  margin-top: 22px;
+  text-align: center;
+  animation: dev-credit-fade 0.8s ease-out;
+}
+.dev-credit .dc-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 2px;
+}
+.dev-credit .dc-name {
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #FFE9A8 0%, #FFD447 45%, #F2B705 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(255, 212, 71, 0.45);
+}
+.dev-credit .dc-slogan {
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-style: italic;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 1px;
+}
+@keyframes dev-credit-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.error-text { color: var(--danger); font-size: 13px; margin-top: 8px; }
+.hint-box {
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  color: #334155;
+  margin-top: 16px;
+  line-height: 1.6;
+}
+
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline li {
+  padding: 8px 0 8px 18px;
+  border-left: 2px solid #DFE8E2;
+  position: relative;
+  font-size: 13px;
+}
+.timeline li:last-child { border-left-color: transparent; }
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.timeline .ts { color: var(--text-muted); font-size: 11.5px; }
+
+.action-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13.5px; }
+.info-grid .k { color: var(--text-muted); }
+@media (max-width: 600px) { .info-grid { grid-template-columns: 1fr; } }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+  padding: 16px;
+}
+.modal {
+  background: white; border-radius: 14px; padding: 22px; width: 380px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+.modal h3 { margin-top: 0; font-size: 15px; color: var(--primary); }
+
+/* ปฏิทินนัดรังวัด (calendar.html) */
+.cal-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.cal-month-label { font-size: 15.5px; font-weight: 700; color: var(--primary); min-width: 140px; text-align: center; }
+
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #DFE8E2; border: 1px solid #DFE8E2; border-radius: 8px; overflow: hidden; }
+.cal-weekday { background: var(--primary); color: white; text-align: center; padding: 8px 4px; font-size: 12px; font-weight: 600; }
+.cal-day { background: white; min-height: 96px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cal-day.other-month { background: #F7FAFD; }
+.cal-day .cal-daynum { font-size: 12.5px; font-weight: 600; color: #334155; }
+.cal-day.today .cal-daynum {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: white;
+}
+.cal-chip {
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; max-width: 100%;
+  padding: 2px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600;
+  background: var(--accent-light); color: var(--primary);
+}
+.cal-chip:hover { filter: brightness(0.95); }
+.cal-chip.unassigned { background: var(--gold-light); color: var(--warning); }
+.cal-more { font-size: 11px; color: var(--text-muted); cursor: pointer; }
+.cal-more:hover { text-decoration: underline; }
+@media (max-width: 700px) {
+  .cal-day { min-height: 58px; padding: 3px; }
+  .cal-daynum { font-size: 11px; }
+  .cal-weekday { font-size: 10px; padding: 5px 1px; }
+  .cal-chip { font-size: 9.5px; padding: 1px 4px; }
+}
+
+/* การ์ด "วันนี้ช่างรังวัดออกไปรังวัด" */
+.today-out-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.today-out-card { background: var(--bg); border: 1px solid #DFE8E2; border-radius: var(--radius); padding: 12px 14px; }
+.today-out-card .to-name { font-weight: 700; font-size: 13.5px; color: var(--primary); margin-bottom: 8px; }
+.today-out-card .to-case { font-size: 12.5px; padding: 4px 0; cursor: pointer; }
+.today-out-card .to-case:hover { color: var(--primary); text-decoration: underline; }
+
+.empty-state { text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 13.5px; }
+.loading { text-align: center; padding: 30px 0; color: var(--text-muted); font-size: 13px; }
+
+/* ---- การ์ดรายการงาน (my-work.html) ---- */
+.work-card { cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; margin-bottom: 12px; }
+.work-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.wc-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+.wc-code { font-weight: 700; font-size: 15px; color: var(--primary); }
+.wc-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.wc-appt { margin-top: 12px; padding-top: 12px; border-top: 1px solid #EDF2EF; font-size: 13px; color: var(--text-muted); }
+.wc-appt strong { color: var(--text); font-weight: 600; }
+
+/* ---- ยืนยันตัวตน 2 ชั้น (2FA) — หน้า account.html และหน้า login.html ---- */
+.qr-box {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+  background: white;
+  border: 1px solid #DFE8E2;
+  border-radius: var(--radius);
+  max-width: 260px;
+}
+.qr-box img { width: 100%; max-width: 220px; height: auto; image-rendering: pixelated; }
+.mfa-secret-box {
+  font-family: "Courier New", monospace;
+  font-size: 14px;
+  letter-spacing: 1px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  word-break: break-all;
+  max-width: 320px;
+}
+.backup-codes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  max-width: 420px;
+}
+@media (max-width: 480px) { .backup-codes-grid { grid-template-columns: 1fr; } }
+/* ---- เช็คลิสต์ความคืบหน้าแบบเต็ม (ป้ายข้อความ) — ใช้ในตารางรายการงานรังวัด cases.html ---- */
+.checklist-full { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.checklist-full .badge { white-space: nowrap; }
+.checklist-full .cf-pos { background: #DCF3E4; color: var(--success); }
+.checklist-full .cf-neg { background: #FDEFD3; color: var(--warning); }
+.checklist-full .cf-unset { background: #DFE8E2; color: #445064; }
+
+.backup-code-chip {
+  font-family: "Courier New", monospace;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.avatar-circle {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--primary); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; overflow: hidden; flex-shrink: 0;
+}
+.avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-circle.large { width: 84px; height: 84px; font-size: 32px; }
+
+/* หัวข้อโปรไฟล์ช่างรังวัด (surveyor-profile.html) — รูป + ชื่อ/รายละเอียดวางเรียงกัน */
+.profile-header { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.profile-header .info h2 { margin: 0 0 4px 0; color: var(--primary); font-size: 19px; }
+.profile-header .info .sub { color: var(--text-muted); font-size: 13.5px; }
+
+/* แถบสัดส่วนเช็คลิสต์ความคืบหน้ารวม (surveyor-profile.html) — เขียว=เสร็จ/ครบ, ส้ม=ยังไม่เสร็จ/รอ, เทา=ยังไม่ระบุ */
+.stat-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: #DFE8E2; margin-top: 4px; }
+.stat-bar span { height: 100%; }
+.stat-bar .seg-pos { background: var(--success); }
+.stat-bar .seg-neg { background: var(--warning); }
+.stat-bar .seg-unset { background: #B7C2D0; }
+.stat-legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); margin-top: 8px; flex-wrap: wrap; }
+.stat-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+/* เช็คลิสต์ความคืบหน้าภาคสนาม (ผลการรังวัด / ขึ้นรูป / ข้างเคียง / ปิดประกาศ) */
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+@media (max-width: 640px) { .checklist-grid { grid-template-columns: 1fr; } }
+
+.checklist-item {
+  background: var(--bg);
+  border: 1px solid #DFE8E2;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.checklist-item .ci-label { font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 8px; }
+
+.segmented { display: flex; border: 1px solid #CBD5C9; border-radius: 7px; overflow: hidden; }
+.seg-btn {
+  flex: 1;
+  border: none;
+  background: white;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #64748b;
+  border-right: 1px solid #CBD5C9;
+  transition: background 0.15s;
+}
+.seg-btn:last-child { border-right: none; }
+.seg-btn:hover { background: #F1F5F9; }
+.seg-btn.active.pos { background: var(--success); color: white; }
+.seg-btn.active.neg { background: var(--text-muted); color: white; }
+.seg-btn:disabled { cursor: default; }
+
+/* รูปภาพประกอบข้อมูลแปลง */
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+@media (max-width: 480px) { .photo-grid { grid-template-columns: repeat(2, 1fr); } }
+.photo-slot {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #DFE8E2;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #F1F5F9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-slot .photo-remove {
+  position: absolute; top: 4px; right: 4px;
+  background: rgba(15,23,42,0.65); color: white; border: none;
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 1;
+}
+.photo-slot.empty {
+  border: 2px dashed #CBD5C9;
+  color: var(--text-muted);
+  font-size: 24px;
+  cursor: pointer;
+}
+.photo-slot.empty:hover { border-color: var(--primary); color: var(--primary); }
+
+.location-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--primary); font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.location-link:hover { text-decoration: underline; }
+
+/* ---- หน้าติดตามงานสำหรับประชาชน (track.html) — ไม่ต้องล็อกอิน ---- */
+.track-wrap {
+  min-height: 100vh;
+  background: linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 55%, #073523 100%);
+  padding: 24px 16px 40px;
+}
+.track-header { text-align: center; color: white; margin-bottom: 20px; }
+.track-header img { width: 64px; height: 64px; border-radius: 50%; box-shadow: 0 4px 14px rgba(0,0,0,0.25); margin-bottom: 10px; }
+.track-header h1 { color: white; font-size: 19px; margin: 0 0 4px 0; }
+.track-header .subtitle { color: #cfe9d9; margin: 0; }
+.track-container { max-width: 480px; margin: 0 auto; }
+.track-card {
+  background: white;
+  border-radius: 14px;
+  padding: 26px 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  margin-bottom: 16px;
+}
+.track-card .btn-primary { width: 100%; }
+.track-back { text-align: center; margin-top: 10px; }
+.track-back a { color: white; font-size: 13px; text-decoration: underline; cursor: pointer; }
+
+.stage-bar { display: flex; align-items: flex-start; margin: 6px 0 20px; }
+.stage-step { flex: 1; text-align: center; position: relative; }
+.stage-step .dot {
+  width: 26px; height: 26px; border-radius: 50%; background: #DFE8E2; color: #64748b;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  margin: 0 auto 6px; position: relative; z-index: 2;
+}
+.stage-step .line {
+  position: absolute; top: 13px; left: -50%; width: 100%; height: 3px; background: #DFE8E2; z-index: 1;
+}
+.stage-step:first-child .line { display: none; }
+.stage-step .lbl { font-size: 10.5px; color: var(--text-muted); line-height: 1.3; }
+.stage-step.done .dot { background: var(--success); color: white; }
+.stage-step.done .line { background: var(--success); }
+.stage-step.current .dot { background: var(--primary); color: white; box-shadow: 0 0 0 4px var(--accent-light); }
+.stage-step.current .lbl { color: var(--primary); font-weight: 700; }
+.stage-bar.cancelled .stage-step .dot { background: #FBE1DE; color: var(--danger); }
+.stage-bar.cancelled .stage-step .line { background: #FBE1DE; }
+
+.track-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+.track-case-code { font-family: "Courier New", monospace; font-weight: 700; font-size: 15px; color: var(--primary); letter-spacing: 0.5px; }

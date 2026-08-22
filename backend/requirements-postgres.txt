@@ -1,0 +1,11 @@
+# ติดตั้งเพิ่มจากไฟล์นี้เฉพาะตอนต้องการต่อฐานข้อมูล PostgreSQL ออนไลน์ (ตั้งค่า DATABASE_URL)
+# ใช้งานทั่วไปแบบ SQLite ในเครื่อง (ค่าเริ่มต้นของระบบ) ไม่ต้องติดตั้งไฟล์นี้เลย
+#
+# วิธีใช้:
+#   pip install -r requirements.txt
+#   pip install -r requirements-postgres.txt   # เฉพาะตอนจะต่อ PostgreSQL เท่านั้น
+#
+# ถ้าติดตั้งแล้วเจอ error "pg_config executable not found" หรือ build จากซอร์สไม่สำเร็จ มักแปลว่า
+# เครื่อง/เวอร์ชัน Python นี้ไม่มี wheel สำเร็จรูปของเวอร์ชันที่ระบุไว้ — ลองอัปเดต pip ก่อน
+# (python -m pip install --upgrade pip) แล้วติดตั้งใหม่ หรือแจ้งเวอร์ชัน Python/OS มาช่วยตรวจได้
+psycopg2-binary==2.9.9

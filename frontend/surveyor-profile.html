@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>โปรไฟล์ช่างรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <a href="#" id="backLink" class="subtitle" style="display:inline-block; margin-bottom:10px;">&larr; กลับ</a>
+  <div id="profileBox"><div class="loading">กำลังโหลดข้อมูล...</div></div>
+</div>
+
+<!-- ป๊อปอัพ "งานที่ต้องรังวัดวันนี้" — เด้งให้เฉพาะช่างรังวัดตอนเพิ่งล็อกอินเข้ามา (ดู dol_just_logged_in ใน login.html) -->
+<div class="modal-backdrop" id="todayModal" style="display:none;">
+  <div class="modal">
+    <h3 id="tm_title">งานที่ต้องรังวัดวันนี้</h3>
+    <div id="tm_list"></div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" onclick="closeTodayModal()">รับทราบ</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+
+  // เกณฑ์เช็คลิสต์ความคืบหน้า 4 รายการ — ต้องตรงกับ CHECKLIST_FIELDS ฝั่ง backend (blueprints/surveyors.py)
+  // และ CHECKLIST_DEFS ในหน้ารายการงาน (cases.html) เพื่อให้ป้าย/สีตรงกันทั้งระบบ
+  const CHECKLIST_DEFS = [
+    { key: "survey_result", label: "ผลการรังวัด", posLabel: "เสร็จ", negLabel: "ไม่เสร็จ" },
+    { key: "mapping_status", label: "ขึ้นรูป", posLabel: "เสร็จ", negLabel: "ไม่เสร็จ" },
+    { key: "neighbor_status", label: "ข้างเคียง", posLabel: "ครบ", negLabel: "รอส่วนราชการ" },
+    { key: "announcement_status", label: "ปิดประกาศ", posLabel: "ปิดแล้ว", negLabel: "รอปิด" },
+  ];
+
+  // สถานะที่ถือว่า "จบงานแล้ว" ไม่ต้องนับเป็นเกินนัดรังวัด — ตรงกับ cases.html และฝั่ง backend
+  const OVERDUE_EXCLUDED_STATUSES = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "POSTPONED", "SURVEY_DONE"]);
+
+  function appointmentOverdueBadge(c) {
+    if (OVERDUE_EXCLUDED_STATUSES.has(c.status)) return "-";
+    if (!c.appointment_date) return "-";
+    const appt = new Date(c.appointment_date);
+    if (isNaN(appt.getTime())) return "-";
+    const diffDays = Math.floor((new Date() - appt) / (24 * 60 * 60 * 1000));
+    if (diffDays >= 60) return `<span class="badge status-CANCELLED">เกิน 60 วัน</span>`;
+    if (diffDays >= 30) return `<span class="badge status-ASSIGNED">เกิน 30 วัน</span>`;
+    return "-";
+  }
+
+  function monthLabel(yearMonth) {
+    const d = new Date(yearMonth + "-01");
+    if (isNaN(d.getTime())) return yearMonth;
+    return d.toLocaleDateString("th-TH", { year: "numeric", month: "long" });
+  }
+
+  function statBar(field) {
+    const total = field.pos + field.neg + field.unset;
+    const pct = (n) => (total ? (n / total) * 100 : 0);
+    return `
+      <div class="stat-bar">
+        <span class="seg-pos" style="width:${pct(field.pos)}%;"></span>
+        <span class="seg-neg" style="width:${pct(field.neg)}%;"></span>
+        <span class="seg-unset" style="width:${pct(field.unset)}%;"></span>
+      </div>`;
+  }
+
+  function getQueryId() {
+    return new URLSearchParams(window.location.search).get("id");
+  }
+
+  function isToday(dateStr) {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  }
+
+  // แสดงป๊อปอัพสรุปเรื่องที่นัดรังวัดไว้ "วันนี้" — เรียกเฉพาะตอนช่างรังวัดเพิ่งล็อกอินเข้ามา (ธง sessionStorage
+  // ถูกตั้งไว้จาก login.html และถูกอ่านแล้วลบทิ้งที่นี่ทันที จึงไม่เด้งซ้ำถ้ากลับมาหน้านี้อีกในเซสชันเดียวกัน)
+  function showTodayPopupIfNeeded(cases) {
+    const justLoggedIn = sessionStorage.getItem("dol_just_logged_in");
+    sessionStorage.removeItem("dol_just_logged_in");
+    if (!justLoggedIn) return;
+
+    const todayCases = cases.filter((c) => !OVERDUE_EXCLUDED_STATUSES.has(c.status) && isToday(c.appointment_date));
+    if (!todayCases.length) return;
+
+    const todayLabel = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+    document.getElementById("tm_title").textContent = `งานที่ต้องรังวัดวันนี้ (${todayLabel})`;
+    document.getElementById("tm_list").innerHTML = todayCases
+      .map(
+        (c) => `
+      <div class="to-case" style="padding:8px 0; border-top:1px solid #F0F3F7; cursor:pointer;" onclick="window.location.href='/case.html?id=${c.id}'">
+        ${statusBadge(c.status)} <strong>${c.case_code}</strong> — ${c.requester_name}
+      </div>`
+      )
+      .join("");
+    document.getElementById("todayModal").style.display = "flex";
+  }
+
+  function closeTodayModal() {
+    document.getElementById("todayModal").style.display = "none";
+  }
+
+  async function init() {
+    // ใช้ activePage = "surveyor-profile" เพื่อไฮไลต์ลิงก์ "สรุปผล" ในเมนูบนตอนช่างรังวัดดูหน้าของตัวเอง —
+    // บทบาทอื่นไม่มีลิงก์นี้ในเมนูอยู่แล้ว จึงไม่มีผลกับหน้าจอของบทบาทอื่น
+    const user = await renderTopbar("surveyor-profile");
+    if (!user) return;
+
+    // ทางกลับ: ช่างรังวัดกลับไปหน้า "งานของฉัน" ส่วนบทบาทอื่นกลับไปหน้า "ข้อมูลช่างรังวัด"
+    const backLink = document.getElementById("backLink");
+    if (user.role === "surveyor") {
+      backLink.href = "/my-work.html";
+      backLink.textContent = "← กลับไปหน้างานของฉัน";
+    } else {
+      backLink.href = "/surveyors.html";
+      backLink.textContent = "← กลับไปหน้าข้อมูลช่างรังวัด";
+    }
+
+    const surveyorId = getQueryId();
+    if (!surveyorId) {
+      document.getElementById("profileBox").innerHTML = `<div class="card empty-state">ไม่ระบุช่างรังวัดที่ต้องการดู</div>`;
+      return;
+    }
+
+    let profile;
+    try {
+      profile = await apiFetch("/surveyors/" + surveyorId + "/profile");
+    } catch (e) {
+      document.getElementById("profileBox").innerHTML = `<div class="card empty-state">${e.message}</div>`;
+      return;
+    }
+    if (!profile) return;
+
+    render(profile);
+
+    // เด้งป๊อปอัพ "งานที่ต้องรังวัดวันนี้" เฉพาะช่างรังวัดตอนดูหน้าของตัวเอง (backend จำกัดให้ช่างรังวัดเรียกดูได้
+    // เฉพาะโปรไฟล์ตัวเองอยู่แล้ว — ดู _check_profile_access ใน blueprints/surveyors.py — จึงเช็คแค่บทบาทก็พอ)
+    if (user.role === "surveyor") {
+      showTodayPopupIfNeeded(profile.cases || []);
+    }
+  }
+
+  async function render(profile) {
+    const s = profile.surveyor;
+    const kpi = profile.kpi;
+    const types = (await apiFetch("/survey-types")) || [];
+    const typeMap = {};
+    types.forEach((t) => (typeMap[t.id] = t.name));
+
+    let photoImg = `<div class="avatar-circle large" id="profileAvatar">${(s.full_name || "?").charAt(0)}</div>`;
+
+    const byTypeRows = profile.by_type.length
+      ? profile.by_type
+          .map(
+            (t) => `
+        <tr>
+          <td>${t.name}</td>
+          <td>${t.total}</td>
+          <td>${t.active}</td>
+          <td>${t.completed}</td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="4" class="empty-state">ยังไม่มีงาน</td></tr>`;
+
+    const maxMonthTotal = Math.max(1, ...profile.by_month.map((m) => m.total));
+    const byMonthRows = profile.by_month.length
+      ? profile.by_month
+          .map(
+            (m) => `
+        <tr>
+          <td style="white-space:nowrap;">${monthLabel(m.year_month)}</td>
+          <td style="width:100%;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="flex:1; background:#E1E7EE; border-radius:4px; height:10px; overflow:hidden;">
+                <div style="width:${(m.total / maxMonthTotal) * 100}%; background:var(--primary); height:100%;"></div>
+              </div>
+              <span style="font-size:12.5px; color:var(--text-muted); white-space:nowrap;">${m.total} เรื่อง (เสร็จ ${m.completed})</span>
+            </div>
+          </td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="2" class="empty-state">ยังไม่มีงาน</td></tr>`;
+
+    const checklistHtml = CHECKLIST_DEFS.map((d) => {
+      const field = profile.checklist[d.key];
+      return `
+        <div class="checklist-item">
+          <div class="ci-label">${d.label}</div>
+          ${statBar(field)}
+          <div class="stat-legend">
+            <span><span class="dot" style="background:var(--success);"></span>${d.posLabel} ${field.pos}</span>
+            <span><span class="dot" style="background:var(--warning);"></span>${d.negLabel} ${field.neg}</span>
+            <span><span class="dot" style="background:#B7C2D0;"></span>ยังไม่ระบุ ${field.unset}</span>
+          </div>
+        </div>`;
+    }).join("");
+
+    const caseRows = profile.cases.length
+      ? profile.cases
+          .map(
+            (c) => `
+        <tr class="clickable" onclick="window.location.href='/case.html?id=${c.id}'">
+          <td>${c.case_code}</td>
+          <td>${c.requester_name}</td>
+          <td>${typeMap[c.survey_type_id] || "-"}</td>
+          <td>${fmtDateOnly(c.received_date)}</td>
+          <td>${fmtDateOnly(c.appointment_date)}</td>
+          <td>${appointmentOverdueBadge(c)}</td>
+          <td>${statusBadge(c.status)}</td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="7" class="empty-state">ยังไม่มีงานที่รับผิดชอบ</td></tr>`;
+
+    document.getElementById("profileBox").innerHTML = `
+      <div class="card">
+        <div class="profile-header">
+          ${photoImg}
+          <div class="info">
+            <h2>${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""}</h2>
+            <div class="sub">รหัสพนักงาน ${s.employee_code} · ${s.position || "-"} · ${s.office_name}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="value">${kpi.total}</div><div class="label">งานทั้งหมด</div></div>
+        <div class="kpi-card warn"><div class="value">${kpi.active}</div><div class="label">งานค้าง (ยังไม่ปิด)</div></div>
+        <div class="kpi-card"><div class="value">${kpi.completed}</div><div class="label">ถอนจ่ายแล้ว (เสร็จ)</div></div>
+        <div class="kpi-card danger"><div class="value">${kpi.cancelled}</div><div class="label">ยกเลิก</div></div>
+      </div>
+      <div class="kpi-grid" style="margin-top:10px;">
+        <div class="kpi-card warn"><div class="value">${kpi.overdue_30}</div><div class="label">เกินนัดรังวัด 30 วัน</div></div>
+        <div class="kpi-card danger"><div class="value">${kpi.overdue_60}</div><div class="label">เกินนัดรังวัด 60 วัน</div></div>
+      </div>
+
+      <div class="card">
+        <h2>แยกตามประเภทงาน</h2>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>ประเภทงาน</th><th>ทั้งหมด</th><th>ค้าง</th><th>เสร็จ</th></tr></thead>
+          <tbody>${byTypeRows}</tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>แยกตามเดือนที่รับเรื่อง</h2>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>เดือน/ปี</th><th>จำนวนงาน</th></tr></thead>
+          <tbody>${byMonthRows}</tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>เช็คลิสต์ความคืบหน้ารวม</h2>
+        <div class="checklist-grid">${checklistHtml}</div>
+      </div>
+
+      <div class="card">
+        <h2>รายการงานทั้งหมด</h2>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>รว.19</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>เกินนัดรังวัด</th><th>สถานะ</th></tr></thead>
+          <tbody>${caseRows}</tbody>
+        </table>
+        </div>
+      </div>
+    `;
+
+    if (s.photo_url) {
+      const url = await fetchAuthedBlobUrl(s.photo_url);
+      const avatar = document.getElementById("profileAvatar");
+      if (avatar && url) avatar.innerHTML = `<img src="${url}" alt="">`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

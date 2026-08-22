@@ -1,0 +1,36 @@
+# ป้องกันไม่ให้ข้อมูลจริง/ความลับหลุดขึ้น Git repo โดยไม่ตั้งใจตอน push ขึ้น GitHub (เช่นตอน deploy ผ่าน Render)
+
+# ฐานข้อมูล SQLite + ไฟล์อัปโหลด (รูปช่างรังวัด, เอกสารแนบเรื่อง) — มีข้อมูลจริงของประชาชนและรหัสผ่าน (hash)
+# เก็บไว้ในเครื่อง/volume ของ production เท่านั้น ไม่ควรอยู่ใน Git ไม่ว่ากรณีใด
+backend/data/
+*.db
+
+# ความลับ / ค่าตั้งค่าเฉพาะเครื่อง — ต้องตั้งผ่าน environment variable ของแพลตฟอร์ม deploy เท่านั้น
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Node (ถ้ามีเครื่องมือ dev ที่พึ่ง npm)
+node_modules/
+
+# ไฟล์ที่เกิดจากการทดสอบ/สคริปต์ทดสอบเฉพาะกิจ — ไม่ควรอยู่ใน repo หลัก
+screenshots/
+test_ui.py
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

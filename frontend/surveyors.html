@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ข้อมูลช่างรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>ข้อมูลช่างรังวัด</h1>
+      <div class="subtitle">รายชื่อช่างรังวัด ภาระงานปัจจุบัน และรายการงานที่รับผิดชอบ</div>
+    </div>
+    <button class="btn btn-primary" id="newSurveyorBtn" style="display:none;">+ เพิ่มช่างรังวัด</button>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="ค้นหาชื่อ ชื่อเล่น หรือตำแหน่ง...">
+      <select id="provinceFilter" style="display:none;">
+        <option value="">ทุกจังหวัด</option>
+      </select>
+      <select id="officeFilter" style="display:none;">
+        <option value="">ทุกสำนักงาน</option>
+      </select>
+      <select id="statusFilter">
+        <option value="">ทุกสถานะ</option>
+        <option value="active">ปฏิบัติงาน</option>
+        <option value="inactive">ปิดใช้งาน</option>
+      </select>
+      <button class="btn btn-outline btn-sm" id="clearFiltersBtn" type="button">ล้างตัวกรอง</button>
+    </div>
+    <div class="subtitle" id="resultSummary" style="margin:-4px 0 12px;"></div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th class="sortable" data-sort="name">ชื่อ-นามสกุล / ชื่อเล่น<span class="sort-arrow"></span></th>
+          <th>ตำแหน่ง</th>
+          <th class="sortable" data-sort="office">สำนักงาน<span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="total">งานทั้งหมด<span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="pending">งานค้าง<span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="completed">งานเสร็จ<span class="sort-arrow"></span></th>
+          <th>สถานะ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="surveyorsBody"><tr><td colspan="9" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sortable:hover { background: var(--primary-dark, #0A5236); }
+  th.sortable .sort-arrow { display: inline-block; width: 12px; font-size: 11px; opacity: 0.6; }
+  th.sortable.sort-active { background: var(--primary-dark, #0A5236); }
+  th.sortable.sort-active .sort-arrow { opacity: 1; }
+</style>
+
+<!-- Modal: เพิ่มช่างรังวัดใหม่ (แก้ไขข้อมูลช่างที่มีอยู่แล้ว ให้ไปที่หน้า "จัดการข้อมูลช่างรังวัด" แทน — ดูปุ่มไอคอนแก้ไขในตาราง) -->
+<div class="modal-backdrop" id="surveyorModal" style="display:none;">
+  <div class="modal">
+    <h3>เพิ่มช่างรังวัด</h3>
+    <form id="surveyorForm">
+      <div id="userFieldsBox">
+        <div class="form-row"><label>Username (สำหรับเข้าสู่ระบบ)</label><input type="text" id="s_username" autocomplete="off"></div>
+        <div class="form-row"><label>รหัสผ่านเริ่มต้น</label><input type="text" id="s_password" autocomplete="off"></div>
+        <div class="form-row"><label>ชื่อ-นามสกุล</label><input type="text" id="s_full_name"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label>ชื่อเล่น</label><input type="text" id="s_nickname"></div>
+        <div class="form-row"><label>ตำแหน่ง</label><input type="text" id="s_position"></div>
+        <div class="form-row"><label>สำนักงาน</label><select id="s_office_id" required></select></div>
+      </div>
+      <div class="form-row">
+        <label>รูปถ่าย</label>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img id="s_photo_preview" style="display:none; width:64px; height:64px; border-radius:50%; object-fit:cover; border:1px solid #E1E7EE;">
+          <input type="file" id="s_photo" accept="image/*">
+        </div>
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" onclick="closeSurveyorModal()">ยกเลิก</button>
+      </div>
+      <div id="surveyorFormError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+  let offices = [];
+  let allSurveyors = [];
+  const photoUrlCache = {};
+  let sortKey = "pending";   // ค่าเริ่มต้น: เรียงตามงานค้างมากไปน้อย เพื่อให้เห็นภาระงานที่ต้องติดตามก่อนเลย
+  let sortDir = "desc";
+  const filters = { search: "", province: "", officeId: "", status: "" };
+
+  async function init() {
+    currentUser = await renderTopbar("surveyors");
+    if (!currentUser) return;
+    if (!["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(currentUser.role)) {
+      document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้บริหาร/หัวหน้าช่างรังวัด/ผู้ดูแลระบบ</div>";
+      return;
+    }
+    if (["system_admin", "branch_admin"].includes(currentUser.role)) {
+      document.getElementById("newSurveyorBtn").style.display = "inline-block";
+    }
+    offices = (await apiFetch("/offices")) || [];
+    if (currentUser.role === "province_admin") {
+      const myOffice = offices.find((o) => o.id === currentUser.office_id);
+      if (myOffice) offices = offices.filter((o) => o.province === myOffice.province);
+    } else if (currentUser.role === "branch_admin") {
+      offices = offices.filter((o) => o.id === currentUser.office_id);
+    }
+    const select = document.getElementById("s_office_id");
+    select.innerHTML = offices.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    bindFilterControls();
+    bindSortableHeaders();
+    await loadSurveyors();
+  }
+
+  async function loadSurveyors() {
+    const rows = await apiFetch("/surveyors");
+    allSurveyors = rows || [];
+    window._surveyorRows = allSurveyors;
+    setupProvinceFilterOptions();
+    setupOfficeFilterOptions(filters.province);
+    updateSortHeaderUI();
+    renderFilteredList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // ตัวกรอง + เรียงลำดับ — ทำฝั่ง client ล้วนๆ จากข้อมูลที่โหลดมาครั้งเดียว (allSurveyors) เพราะจำนวนช่างต่อจังหวัด
+  // ไม่มากพอที่จะต้องยิง API ซ้ำทุกครั้งที่เปลี่ยนตัวกรอง — กด/พิมพ์แล้วเห็นผลทันทีไม่ต้องรอโหลด
+  // ---------------------------------------------------------------------------
+  function setupProvinceFilterOptions() {
+    const sel = document.getElementById("provinceFilter");
+    const provinces = [...new Set(allSurveyors.map((s) => s.office_province).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+    if (provinces.length > 1) {
+      sel.style.display = "";
+      sel.innerHTML = `<option value="">ทุกจังหวัด</option>` + provinces.map((p) => `<option value="${p}">${p}</option>`).join("");
+      sel.value = filters.province;
+    } else {
+      sel.style.display = "none";
+      filters.province = "";
+    }
+  }
+
+  function setupOfficeFilterOptions(provinceFilterValue) {
+    const sel = document.getElementById("officeFilter");
+    const scoped = allSurveyors.filter((s) => !provinceFilterValue || s.office_province === provinceFilterValue);
+    const officeMap = new Map();
+    scoped.forEach((s) => {
+      if (s.office_id && !officeMap.has(s.office_id)) officeMap.set(s.office_id, { name: s.office_name, province: s.office_province });
+    });
+    const officeList = [...officeMap.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, "th"));
+    const showGroups = !provinceFilterValue && new Set(officeList.map(([, v]) => v.province)).size > 1;
+    if (showGroups) {
+      const byProvince = new Map();
+      officeList.forEach(([id, v]) => {
+        if (!byProvince.has(v.province)) byProvince.set(v.province, []);
+        byProvince.get(v.province).push([id, v.name]);
+      });
+      sel.innerHTML =
+        `<option value="">ทุกสำนักงาน</option>` +
+        [...byProvince.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0], "th"))
+          .map(([province, list]) => `<optgroup label="${province}">${list.map(([id, name]) => `<option value="${id}">${name}</option>`).join("")}</optgroup>`)
+          .join("");
+    } else {
+      sel.innerHTML = `<option value="">ทุกสำนักงาน</option>` + officeList.map(([id, v]) => `<option value="${id}">${v.name}</option>`).join("");
+    }
+    if (officeList.length > 1) {
+      sel.style.display = "";
+      sel.value = officeMap.has(filters.officeId) ? filters.officeId : "";
+      filters.officeId = sel.value;
+    } else {
+      sel.style.display = "none";
+      filters.officeId = "";
+    }
+  }
+
+  function bindFilterControls() {
+    const debounce = (fn, ms) => {
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+      };
+    };
+    document.getElementById("searchInput").addEventListener(
+      "input",
+      debounce((e) => {
+        filters.search = e.target.value.trim();
+        renderFilteredList();
+      }, 150)
+    );
+    document.getElementById("provinceFilter").addEventListener("change", (e) => {
+      filters.province = e.target.value;
+      setupOfficeFilterOptions(filters.province);
+      renderFilteredList();
+    });
+    document.getElementById("officeFilter").addEventListener("change", (e) => {
+      filters.officeId = e.target.value;
+      renderFilteredList();
+    });
+    document.getElementById("statusFilter").addEventListener("change", (e) => {
+      filters.status = e.target.value;
+      renderFilteredList();
+    });
+    document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+      filters.search = "";
+      filters.province = "";
+      filters.officeId = "";
+      filters.status = "";
+      document.getElementById("searchInput").value = "";
+      document.getElementById("statusFilter").value = "";
+      setupProvinceFilterOptions();
+      setupOfficeFilterOptions("");
+      renderFilteredList();
+    });
+  }
+
+  function bindSortableHeaders() {
+    document.querySelectorAll("th.sortable").forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (sortKey === key) {
+          sortDir = sortDir === "desc" ? "asc" : "desc";
+        } else {
+          sortKey = key;
+          // ชื่อ/สำนักงาน เริ่มจาก ก-ฮ (asc) ส่วนตัวเลขงานเริ่มจากมากไปน้อย (desc) เพราะมีประโยชน์กว่าตอนดูครั้งแรก
+          sortDir = key === "name" || key === "office" ? "asc" : "desc";
+        }
+        updateSortHeaderUI();
+        renderFilteredList();
+      });
+    });
+  }
+
+  function updateSortHeaderUI() {
+    document.querySelectorAll("th.sortable").forEach((th) => {
+      const active = th.dataset.sort === sortKey;
+      th.classList.toggle("sort-active", active);
+      th.querySelector(".sort-arrow").textContent = active ? (sortDir === "desc" ? "▼" : "▲") : "";
+    });
+  }
+
+  function renderFilteredList() {
+    const tbody = document.getElementById("surveyorsBody");
+    const q = filters.search.toLowerCase();
+    let list = allSurveyors.filter((s) => {
+      if (filters.province && s.office_province !== filters.province) return false;
+      if (filters.officeId && s.office_id !== filters.officeId) return false;
+      if (filters.status === "active" && !s.user_is_active) return false;
+      if (filters.status === "inactive" && s.user_is_active) return false;
+      if (q) {
+        const haystack = `${s.full_name || ""} ${s.nickname || ""} ${s.position || ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const cmp = {
+      name: (a, b) => (a.full_name || "").localeCompare(b.full_name || "", "th"),
+      office: (a, b) => (a.office_name || "").localeCompare(b.office_name || "", "th"),
+      total: (a, b) => a.total_case_count - b.total_case_count,
+      pending: (a, b) => a.active_case_count - b.active_case_count,
+      completed: (a, b) => a.completed_case_count - b.completed_case_count,
+    }[sortKey];
+    list = list.slice().sort((a, b) => (sortDir === "desc" ? -cmp(a, b) : cmp(a, b)));
+
+    if (allSurveyors.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">ยังไม่มีข้อมูลช่างรังวัด</td></tr>`;
+    } else if (list.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-state">ไม่พบช่างรังวัดที่ตรงกับตัวกรอง</td></tr>`;
+    } else {
+      tbody.innerHTML = list
+        .map((s) => {
+          // งานทั้งหมด/งานค้าง/งานเสร็จ นับเฉพาะเรื่องที่ช่างคนนี้เป็นผู้รับผิดชอบล่าสุดอยู่ตอนนี้ (ตรงกับหน้าโปรไฟล์
+          // ช่างรังวัด surveyor-profile.html) — งานค้างจะเน้นสีถ้ามากกว่า 0 เพื่อให้เห็นภาระงานปัจจุบันได้เร็ว
+          const activeBadge = s.active_case_count > 0
+            ? `<span class="badge status-ASSIGNED">${s.active_case_count}</span>`
+            : `<span class="badge">0</span>`;
+          const statusBadgeHtml = s.user_is_active ? `<span class="badge status-COMPLETED">ปฏิบัติงาน</span>` : `<span class="badge status-CANCELLED">ปิดใช้งาน</span>`;
+          const cachedPhoto = photoUrlCache[s.id];
+          const avatarInner = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : (s.full_name || "?").charAt(0);
+          return `
+          <tr>
+            <td><div class="avatar-circle" id="avatar-${s.id}">${avatarInner}</div></td>
+            <td class="clickable" onclick="goToProfile('${s.id}')">${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""}</td>
+            <td>${s.position || "-"}</td>
+            <td>${s.office_name}</td>
+            <td>${s.total_case_count}</td>
+            <td>${activeBadge}</td>
+            <td>${s.completed_case_count}</td>
+            <td>${statusBadgeHtml}</td>
+            <td>
+              <div style="display:flex; gap:6px; justify-content:flex-end;">
+                <button class="btn btn-outline btn-sm" onclick="goToProfile('${s.id}')">ดูงาน</button>
+              </div>
+            </td>
+          </tr>`;
+        })
+        .join("");
+
+      list.forEach(async (s) => {
+        if (!s.photo_url || photoUrlCache[s.id]) return;
+        const url = await fetchAuthedBlobUrl(s.photo_url);
+        if (!url) return;
+        photoUrlCache[s.id] = url;
+        const avatar = document.getElementById("avatar-" + s.id);
+        if (avatar) avatar.innerHTML = `<img src="${url}" alt="">`;
+      });
+    }
+
+    const pendingTotal = list.reduce((sum, s) => sum + (s.active_case_count || 0), 0);
+    document.getElementById("resultSummary").textContent =
+      allSurveyors.length === 0
+        ? ""
+        : `แสดง ${list.length} จาก ${allSurveyors.length} คน • งานค้างรวม ${pendingTotal} เรื่อง`;
+  }
+
+  // คลิกชื่อ/รหัสพนักงานของช่างในตาราง -> ไปหน้าโปรไฟล์ช่างรังวัด (แดชบอร์ดสรุปผลงาน + รายการงานทั้งหมด)
+  function goToProfile(surveyorId) {
+    window.location.href = "/surveyor-profile.html?id=" + surveyorId;
+  }
+
+  function openCreate() {
+    document.getElementById("surveyorForm").reset();
+    document.getElementById("s_photo_preview").style.display = "none";
+    document.getElementById("surveyorModal").style.display = "flex";
+  }
+
+  function closeSurveyorModal() {
+    document.getElementById("surveyorModal").style.display = "none";
+    document.getElementById("surveyorFormError").style.display = "none";
+  }
+
+  document.getElementById("newSurveyorBtn").addEventListener("click", openCreate);
+
+  document.getElementById("surveyorForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("surveyorFormError");
+    errorBox.style.display = "none";
+    try {
+      const photoFile = document.getElementById("s_photo").files[0];
+      const payload = {
+        // ไม่ส่ง employee_code — ระบบออกรหัสพนักงานให้อัตโนมัติเสมอตอนเพิ่มช่างรังวัดใหม่
+        username: document.getElementById("s_username").value,
+        password: document.getElementById("s_password").value,
+        full_name: document.getElementById("s_full_name").value,
+        nickname: document.getElementById("s_nickname").value || null,
+        position: document.getElementById("s_position").value || null,
+        office_id: document.getElementById("s_office_id").value,
+      };
+      const created = await apiFetch("/surveyors", { method: "POST", body: JSON.stringify(payload) });
+      const surveyorId = created && created.id;
+      if (photoFile && surveyorId) {
+        await apiUpload("/surveyors/" + surveyorId + "/photo", photoFile);
+      }
+      closeSurveyorModal();
+      await loadSurveyors();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

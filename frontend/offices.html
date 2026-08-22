@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการสำนักงาน — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>จัดการสำนักงาน</h1>
+      <div class="subtitle">รายชื่อสำนักงานที่ดินทั้งหมดที่ใช้งานระบบนี้ — เพิ่มสำนักงาน/สาขาใหม่ได้จากหน้านี้ เพื่อรองรับการขยายไปจังหวัด/สาขาอื่น</div>
+    </div>
+    <button class="btn btn-primary" id="newOfficeBtn">+ เพิ่มสำนักงาน</button>
+  </div>
+
+  <div class="card">
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>รหัสสำนักงาน</th><th>ชื่อสำนักงาน</th><th>จังหวัด</th><th>อำเภอ</th><th>สถานะ</th><th></th></tr>
+      </thead>
+      <tbody id="officesBody"><tr><td colspan="6" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: เพิ่ม/แก้ไขสำนักงาน -->
+<div class="modal-backdrop" id="officeModal" style="display:none;">
+  <div class="modal">
+    <h3 id="officeModalTitle">เพิ่มสำนักงาน</h3>
+    <form id="officeForm">
+      <div class="form-row" id="o_code_row">
+        <label>รหัสสำนักงาน (ใช้ขึ้นต้นเลข รว.19 ของสำนักงานนี้ เช่น LB01 — <strong>ตั้งครั้งเดียว แก้ไขทีหลังไม่ได้</strong>)</label>
+        <input type="text" id="o_code" autocomplete="off" style="text-transform:uppercase;">
+      </div>
+      <div class="form-row"><label>ชื่อสำนักงาน</label><input type="text" id="o_name" required></div>
+      <div class="form-grid">
+        <div class="form-row"><label>จังหวัด</label><input type="text" id="o_province" required></div>
+        <div class="form-row"><label>อำเภอ</label><input type="text" id="o_district"></div>
+      </div>
+      <div class="form-row"><label>ที่อยู่</label><input type="text" id="o_address"></div>
+      <div class="form-row" id="o_active_row" style="display:none;">
+        <label><input type="checkbox" id="o_is_active" style="width:auto; display:inline-block; margin-right:6px;"> เปิดใช้งานอยู่ (ยกเลิกติ๊กเพื่อปิดใช้งานสำนักงานนี้ชั่วคราว)</label>
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" onclick="closeOfficeModal()">ยกเลิก</button>
+      </div>
+      <div id="officeFormError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+  let editingId = null;
+
+  async function init() {
+    currentUser = await renderTopbar("offices");
+    if (!currentUser) return;
+    if (currentUser.role !== "system_admin") {
+      document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบ</div>";
+      return;
+    }
+    await loadOffices();
+  }
+
+  async function loadOffices() {
+    const rows = await apiFetch("/offices?include_inactive=1");
+    const tbody = document.getElementById("officesBody");
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ยังไม่มีข้อมูลสำนักงาน</td></tr>`;
+      return;
+    }
+    window._officeRows = rows;
+    tbody.innerHTML = rows
+      .map((o) => {
+        const statusBadgeHtml = o.is_active ? `<span class="badge status-COMPLETED">เปิดใช้งาน</span>` : `<span class="badge status-CANCELLED">ปิดใช้งาน</span>`;
+        return `
+        <tr>
+          <td>${o.code}</td>
+          <td>${o.name}</td>
+          <td>${o.province}</td>
+          <td>${o.district || "-"}</td>
+          <td>${statusBadgeHtml}</td>
+          <td>
+            <button class="btn btn-outline btn-icon" title="แก้ไข" onclick="openEdit('${o.id}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function openCreate() {
+    editingId = null;
+    document.getElementById("officeModalTitle").textContent = "เพิ่มสำนักงาน";
+    document.getElementById("o_code_row").style.display = "block";
+    document.getElementById("o_code").disabled = false;
+    document.getElementById("o_active_row").style.display = "none";
+    document.getElementById("officeForm").reset();
+    document.getElementById("officeModal").style.display = "flex";
+  }
+
+  function openEdit(officeId) {
+    const o = (window._officeRows || []).find((r) => r.id === officeId);
+    if (!o) return;
+    editingId = officeId;
+    document.getElementById("officeModalTitle").textContent = "แก้ไขข้อมูลสำนักงาน";
+    document.getElementById("o_code_row").style.display = "block";
+    document.getElementById("o_code").value = o.code;
+    document.getElementById("o_code").disabled = true; // แก้รหัสสำนักงานทีหลังไม่ได้ — ถูกฝังอยู่ในเลข รว.19 ที่ออกไปแล้ว
+    document.getElementById("o_name").value = o.name || "";
+    document.getElementById("o_province").value = o.province || "";
+    document.getElementById("o_district").value = o.district || "";
+    document.getElementById("o_address").value = o.address || "";
+    document.getElementById("o_active_row").style.display = "block";
+    document.getElementById("o_is_active").checked = !!o.is_active;
+    document.getElementById("officeModal").style.display = "flex";
+  }
+
+  function closeOfficeModal() {
+    document.getElementById("officeModal").style.display = "none";
+    document.getElementById("officeFormError").style.display = "none";
+    document.getElementById("o_code").disabled = false;
+  }
+
+  document.getElementById("newOfficeBtn").addEventListener("click", openCreate);
+
+  document.getElementById("officeForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("officeFormError");
+    errorBox.style.display = "none";
+    try {
+      if (editingId) {
+        const payload = {
+          name: document.getElementById("o_name").value,
+          province: document.getElementById("o_province").value,
+          district: document.getElementById("o_district").value || null,
+          address: document.getElementById("o_address").value || null,
+          is_active: document.getElementById("o_is_active").checked ? 1 : 0,
+        };
+        await apiFetch("/offices/" + editingId, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        const payload = {
+          code: document.getElementById("o_code").value.trim().toUpperCase(),
+          name: document.getElementById("o_name").value,
+          province: document.getElementById("o_province").value,
+          district: document.getElementById("o_district").value || null,
+          address: document.getElementById("o_address").value || null,
+        };
+        await apiFetch("/offices", { method: "POST", body: JSON.stringify(payload) });
+      }
+      closeOfficeModal();
+      await loadOffices();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

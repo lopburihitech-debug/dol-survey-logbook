@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>บัญชีของฉัน — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <h1>บัญชีของฉัน</h1>
+  <div class="subtitle">จัดการรหัสผ่านและการยืนยันตัวตน 2 ชั้น (2FA) ของบัญชีคุณเอง</div>
+
+  <div class="card">
+    <h2>ข้อมูลบัญชี</h2>
+    <div class="info-grid" id="acctInfo">
+      <div><span class="k">Username:</span> <span id="info_username">-</span></div>
+      <div><span class="k">ชื่อ-นามสกุล:</span> <span id="info_full_name">-</span></div>
+      <div><span class="k">บทบาท:</span> <span id="info_role">-</span></div>
+      <div><span class="k">สำนักงาน:</span> <span id="info_office">-</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>เปลี่ยนรหัสผ่าน</h2>
+    <form id="pwChangeForm">
+      <div class="form-row"><label>รหัสผ่านเดิม</label><input type="password" id="cp_current" autocomplete="current-password" required></div>
+      <div class="form-row"><label>รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label><input type="password" id="cp_new" autocomplete="new-password" required></div>
+      <div class="form-row"><label>ยืนยันรหัสผ่านใหม่</label><input type="password" id="cp_confirm" autocomplete="new-password" required></div>
+      <button type="submit" class="btn btn-primary">เปลี่ยนรหัสผ่าน</button>
+      <div id="pwChangeError" class="error-text" style="display:none;"></div>
+      <div id="pwChangeSuccess" class="subtitle" style="display:none; color:var(--success); margin-top:8px;">เปลี่ยนรหัสผ่านสำเร็จ</div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>การยืนยันตัวตน 2 ชั้น (2FA)</h2>
+
+    <!-- สถานะ: ยังไม่เปิดใช้งาน -->
+    <div id="mfaOffState" style="display:none;">
+      <div class="subtitle" style="margin-bottom:14px;">
+        เพิ่มความปลอดภัยให้บัญชีของคุณด้วยการยืนยันตัวตน 2 ชั้น — หลังกรอกรหัสผ่านแล้ว ระบบจะขอรหัส 6 หลักจากแอปยืนยันตัวตน (เช่น Google Authenticator) อีกครั้งก่อนเข้าสู่ระบบได้
+      </div>
+      <button class="btn btn-primary" id="startMfaSetupBtn">ตั้งค่า 2FA</button>
+    </div>
+
+    <!-- ขั้นตอนตั้งค่า: สแกน QR + กรอกรหัสยืนยัน -->
+    <div id="mfaSetupStep" style="display:none;">
+      <div class="subtitle" style="margin-bottom:10px;">1. เปิดแอปยืนยันตัวตน (เช่น Google Authenticator, Microsoft Authenticator) แล้วสแกน QR ด้านล่าง</div>
+      <div class="qr-box">
+        <img id="mfaQrImg" src="" alt="QR code สำหรับตั้งค่า 2FA">
+      </div>
+      <div class="subtitle" style="margin:10px 0 4px;">หรือกรอกรหัสลับด้วยตนเองในแอป:</div>
+      <div class="mfa-secret-box" id="mfaSecretText">-</div>
+      <div class="subtitle" style="margin:16px 0 8px;">2. กรอกรหัส 6 หลักที่แอปแสดงขึ้น เพื่อยืนยันว่าตั้งค่าถูกต้อง</div>
+      <form id="mfaEnableForm">
+        <div class="form-row"><label>รหัส 6 หลัก</label><input type="text" id="mfaEnableCode" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"></div>
+        <div class="action-bar">
+          <button type="submit" class="btn btn-primary">เปิดใช้งาน 2FA</button>
+          <button type="button" class="btn btn-outline" id="cancelMfaSetupBtn">ยกเลิก</button>
+        </div>
+        <div id="mfaEnableError" class="error-text" style="display:none;"></div>
+      </form>
+    </div>
+
+    <!-- แสดงรหัสสำรองครั้งเดียวหลังเปิดใช้งานสำเร็จ -->
+    <div id="mfaBackupCodesStep" style="display:none;">
+      <div class="subtitle" style="color:var(--success); font-weight:600; margin-bottom:6px;">เปิดใช้งาน 2FA สำเร็จ</div>
+      <div class="subtitle" style="margin-bottom:10px;">
+        บันทึกรหัสสำรอง (backup codes) ทั้ง 8 ชุดนี้ไว้ในที่ปลอดภัย — ใช้เข้าสู่ระบบแทนรหัส 2FA ได้กรณีทำอุปกรณ์ยืนยันตัวตนหาย
+        <b>ระบบจะแสดงให้ครั้งนี้ครั้งเดียวเท่านั้น</b> แต่ละรหัสใช้ได้เพียงครั้งเดียว
+      </div>
+      <div class="backup-codes-grid" id="backupCodesGrid"></div>
+      <button class="btn btn-primary" id="doneBackupCodesBtn" style="margin-top:16px;">บันทึกแล้ว — เสร็จสิ้น</button>
+    </div>
+
+    <!-- สถานะ: เปิดใช้งานอยู่ -->
+    <div id="mfaOnState" style="display:none;">
+      <div style="margin-bottom:14px;"><span class="badge status-COMPLETED">เปิดใช้งาน 2FA อยู่</span></div>
+      <div class="subtitle" style="margin-bottom:14px;">บัญชีของคุณได้รับการปกป้องด้วยการยืนยันตัวตน 2 ชั้น หากต้องการปิดใช้งาน ต้องยืนยันรหัสผ่านอีกครั้ง</div>
+      <button class="btn btn-outline" id="startMfaDisableBtn">ปิดใช้งาน 2FA</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: ยืนยันรหัสผ่านเพื่อปิดใช้งาน 2FA -->
+<div class="modal-backdrop" id="mfaDisableModal" style="display:none;">
+  <div class="modal">
+    <h3>ปิดใช้งาน 2FA</h3>
+    <div class="subtitle" style="margin-top:-6px;">กรอกรหัสผ่านปัจจุบันเพื่อยืนยันตัวตนก่อนปิดใช้งาน</div>
+    <form id="mfaDisableForm">
+      <div class="form-row"><label>รหัสผ่าน</label><input type="password" id="mfaDisablePassword" autocomplete="current-password"></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-danger">ปิดใช้งาน 2FA</button>
+        <button type="button" class="btn btn-outline" id="cancelMfaDisableBtn">ยกเลิก</button>
+      </div>
+      <div id="mfaDisableError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+
+  async function init() {
+    currentUser = await renderTopbar("account");
+    if (!currentUser) return;
+    document.getElementById("info_username").textContent = currentUser.username;
+    document.getElementById("info_full_name").textContent = currentUser.full_name;
+    document.getElementById("info_role").textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+    if (currentUser.office_id) {
+      const offices = (await apiFetch("/offices")) || [];
+      const office = offices.find((o) => o.id === currentUser.office_id);
+      document.getElementById("info_office").textContent = office ? office.name : "-";
+    }
+    refreshMfaState();
+  }
+
+  function refreshMfaState() {
+    hideAllMfaSections();
+    if (currentUser.mfa_enabled) {
+      document.getElementById("mfaOnState").style.display = "block";
+    } else {
+      document.getElementById("mfaOffState").style.display = "block";
+    }
+  }
+
+  function hideAllMfaSections() {
+    document.getElementById("mfaOffState").style.display = "none";
+    document.getElementById("mfaSetupStep").style.display = "none";
+    document.getElementById("mfaBackupCodesStep").style.display = "none";
+    document.getElementById("mfaOnState").style.display = "none";
+  }
+
+  // ---------- เปลี่ยนรหัสผ่าน ----------
+  document.getElementById("pwChangeForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("pwChangeError");
+    const successBox = document.getElementById("pwChangeSuccess");
+    errorBox.style.display = "none";
+    successBox.style.display = "none";
+    const current = document.getElementById("cp_current").value;
+    const newPw = document.getElementById("cp_new").value;
+    const confirmPw = document.getElementById("cp_confirm").value;
+    if (newPw.length < 8) {
+      errorBox.textContent = "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (newPw !== confirmPw) {
+      errorBox.textContent = "รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน";
+      errorBox.style.display = "block";
+      return;
+    }
+    try {
+      await apiFetch("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: current, new_password: newPw }),
+      });
+      document.getElementById("pwChangeForm").reset();
+      successBox.style.display = "block";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  // ---------- ตั้งค่า 2FA ----------
+  document.getElementById("startMfaSetupBtn").addEventListener("click", async () => {
+    try {
+      const data = await apiFetch("/auth/mfa/setup", { method: "POST" });
+      document.getElementById("mfaQrImg").src = data.qr_data_uri;
+      document.getElementById("mfaSecretText").textContent = data.secret;
+      document.getElementById("mfaEnableCode").value = "";
+      document.getElementById("mfaEnableError").style.display = "none";
+      hideAllMfaSections();
+      document.getElementById("mfaSetupStep").style.display = "block";
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById("cancelMfaSetupBtn").addEventListener("click", () => {
+    refreshMfaState();
+  });
+
+  document.getElementById("mfaEnableForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("mfaEnableError");
+    errorBox.style.display = "none";
+    const code = document.getElementById("mfaEnableCode").value.trim();
+    try {
+      const data = await apiFetch("/auth/mfa/enable", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      });
+      currentUser.mfa_enabled = 1;
+      localStorage.setItem("dol_user", JSON.stringify(currentUser));
+      document.getElementById("backupCodesGrid").innerHTML = data.backup_codes
+        .map((c) => `<div class="backup-code-chip">${c}</div>`)
+        .join("");
+      hideAllMfaSections();
+      document.getElementById("mfaBackupCodesStep").style.display = "block";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("doneBackupCodesBtn").addEventListener("click", () => {
+    refreshMfaState();
+  });
+
+  // ---------- ปิดใช้งาน 2FA ----------
+  document.getElementById("startMfaDisableBtn").addEventListener("click", () => {
+    document.getElementById("mfaDisablePassword").value = "";
+    document.getElementById("mfaDisableError").style.display = "none";
+    document.getElementById("mfaDisableModal").style.display = "flex";
+  });
+
+  document.getElementById("cancelMfaDisableBtn").addEventListener("click", () => {
+    document.getElementById("mfaDisableModal").style.display = "none";
+  });
+
+  document.getElementById("mfaDisableForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("mfaDisableError");
+    errorBox.style.display = "none";
+    const password = document.getElementById("mfaDisablePassword").value;
+    try {
+      await apiFetch("/auth/mfa/disable", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      currentUser.mfa_enabled = 0;
+      localStorage.setItem("dol_user", JSON.stringify(currentUser));
+      document.getElementById("mfaDisableModal").style.display = "none";
+      refreshMfaState();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

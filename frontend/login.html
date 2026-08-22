@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เข้าสู่ระบบ — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-box">
+    <div class="login-logo"><img src="/img/logo-512.png" alt="ตราสัญลักษณ์"></div>
+    <h1>DOL Survey Logbook</h1>
+    <div class="subtitle">สมุดช่างรังวัดออนไลน์</div>
+    <form id="loginForm">
+      <div class="form-row">
+        <label>ชื่อผู้ใช้</label>
+        <input type="text" id="username" required autocomplete="username">
+      </div>
+      <div class="form-row">
+        <label>รหัสผ่าน</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary">เข้าสู่ระบบ</button>
+      <div id="errorBox" class="error-text" style="display:none;"></div>
+    </form>
+
+    <form id="mfaForm" style="display:none;">
+      <div class="subtitle" style="margin-bottom:14px;">บัญชีนี้เปิดใช้งานการยืนยันตัวตน 2 ชั้น (2FA) — กรอกรหัส 6 หลักจากแอปยืนยันตัวตนของคุณ</div>
+      <div class="form-row">
+        <label>รหัสยืนยัน 6 หลัก</label>
+        <input type="text" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="เช่น 123456 หรือรหัสสำรอง XXXX-XXXX" autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary">ยืนยันและเข้าสู่ระบบ</button>
+      <button type="button" class="btn btn-outline" id="mfaBackBtn" style="width:100%; margin-top:8px;">&larr; กลับไปกรอกรหัสผ่านใหม่</button>
+      <div id="mfaErrorBox" class="error-text" style="display:none;"></div>
+      <div class="hint-box" style="margin-top:14px;">ไม่มีอุปกรณ์ยืนยันตัวตนอยู่กับตัว? กรอกรหัสสำรอง (backup code) รูปแบบ XXXX-XXXX ที่บันทึกไว้ตอนเปิดใช้งาน 2FA แทนได้ (ใช้ได้ครั้งเดียวต่อรหัส)</div>
+    </form>
+
+    <div class="hint-box" id="loginNoticeHint">
+      ระบบนี้สำหรับเจ้าหน้าที่กรมที่ดินที่ได้รับสิทธิ์เข้าใช้งานเท่านั้น กรุณาเก็บรักษาชื่อผู้ใช้และรหัสผ่านเป็นความลับ
+      ไม่ใช้บัญชีร่วมกับผู้อื่น และออกจากระบบทุกครั้งหลังใช้งานเสร็จ โดยเฉพาะเมื่อใช้เครื่องคอมพิวเตอร์ส่วนกลาง<br><br>
+      ลืมรหัสผ่าน หรือเข้าสู่ระบบไม่ได้? กรุณาติดต่อผู้ดูแลระบบของสำนักงานท่าน
+    </div>
+    <div class="track-back" style="margin-top:14px;">
+      <a href="/track.html" style="color:var(--primary);">ประชาชน — ตรวจสอบสถานะคำขอรังวัดที่นี่ &rarr;</a>
+    </div>
+  </div>
+  <div class="dev-credit">
+    <div class="dc-label">Developed by</div>
+    <div class="dc-name">All Might</div>
+    <div class="dc-slogan">"One For All"</div>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+  let pendingMfaToken = null;
+
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+    const errorBox = document.getElementById("errorBox");
+    errorBox.style.display = "none";
+
+    try {
+      const res = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data.error && data.error.message) || "เข้าสู่ระบบไม่สำเร็จ");
+
+      if (data.mfa_required) {
+        pendingMfaToken = data.mfa_token;
+        document.getElementById("loginForm").style.display = "none";
+        document.getElementById("loginNoticeHint").style.display = "none";
+        document.getElementById("mfaForm").style.display = "block";
+        document.getElementById("mfaCode").focus();
+        return;
+      }
+
+      setTokens(data.access_token, data.refresh_token);
+      // ตั้งค่าไว้ให้หน้าสรุปผลงาน (surveyor-profile.html) รู้ว่าเพิ่งล็อกอินเข้ามาจริงๆ (ไม่ใช่แค่กดรีเฟรช/
+      // เข้าหน้าซ้ำ) จะได้เด้งป๊อปอัพ "งานที่ต้องรังวัดวันนี้" ให้เฉพาะช่างรังวัดตอนล็อกอินเท่านั้น — sessionStorage
+      // จะถูกอ่านแล้วลบทิ้งทันทีที่หน้านั้นใช้งาน จึงไม่เด้งซ้ำถ้ากลับมาหน้านี้อีกในเซสชันเดียวกัน
+      sessionStorage.setItem("dol_just_logged_in", "1");
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("mfaForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = document.getElementById("mfaCode").value.trim();
+    const errorBox = document.getElementById("mfaErrorBox");
+    errorBox.style.display = "none";
+
+    try {
+      const res = await fetch("/api/v1/auth/login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfa_token: pendingMfaToken, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data.error && data.error.message) || "ยืนยันไม่สำเร็จ");
+      setTokens(data.access_token, data.refresh_token);
+      sessionStorage.setItem("dol_just_logged_in", "1"); // ดูคอมเมนต์ในฟอร์ม loginForm ด้านบน
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("mfaBackBtn").addEventListener("click", () => {
+    pendingMfaToken = null;
+    document.getElementById("mfaForm").style.display = "none";
+    document.getElementById("mfaErrorBox").style.display = "none";
+    document.getElementById("mfaCode").value = "";
+    document.getElementById("loginForm").style.display = "block";
+    document.getElementById("loginNoticeHint").style.display = "block";
+    document.getElementById("password").value = "";
+  });
+
+  // ถ้ามี token อยู่แล้ว ให้ไปหน้า dashboard เลย
+  if (getTokens().access) window.location.href = "/dashboard.html";
+</script>
+</body>
+</html>

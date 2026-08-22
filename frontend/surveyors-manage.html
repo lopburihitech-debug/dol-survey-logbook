@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการข้อมูลช่างรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>จัดการข้อมูลช่างรังวัด</h1>
+      <div class="subtitle">แก้ไขข้อมูลช่างรังวัดแบบเต็ม ทั้งข้อมูลส่วนตัว บัญชีผู้ใช้ และสำนักงานที่สังกัด</div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-outline" id="syncOfficeBtn" style="display:none;" title="ใช้ถ้าเห็นว่าสำนักงานของช่างกับสำนักงานของเรื่องที่รับผิดชอบไม่ตรงกัน (เช่นเปลี่ยนสำนักงานไว้ก่อนระบบจะย้ายเรื่องให้อัตโนมัติ)">ซิงก์สำนักงานของเรื่องให้ตรงกับช่างทุกคน</button>
+      <a href="/surveyors.html" class="btn btn-outline">+ เพิ่มช่างรังวัดใหม่ / ดูภาระงาน</a>
+    </div>
+  </div>
+
+  <div id="moveNotice" class="subtitle" style="display:none; background:var(--accent-light); border:1px solid var(--accent-border); border-radius:var(--radius); padding:10px 14px; margin-bottom:14px; color:var(--primary); font-weight:600;"></div>
+
+  <div class="card">
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th></th><th>รหัสพนักงาน</th><th>ชื่อ-นามสกุล / ชื่อเล่น</th><th>ตำแหน่ง</th><th>สำนักงาน</th>
+          <th>Username</th><th>อีเมล / เบอร์ติดต่อ</th><th>สถานะช่าง</th><th>เข้าระบบได้</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="surveyorsBody"><tr><td colspan="10" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: จัดการข้อมูลช่างรังวัดแบบเต็ม -->
+<div class="modal-backdrop" id="manageModal" style="display:none;">
+  <div class="modal">
+    <h3>จัดการข้อมูล: <span id="m_title_name"></span></h3>
+    <form id="manageForm">
+      <div class="form-grid">
+        <div class="form-row"><label>ชื่อ-นามสกุล</label><input type="text" id="m_full_name" required></div>
+        <div class="form-row"><label>ชื่อเล่น</label><input type="text" id="m_nickname"></div>
+        <div class="form-row"><label>ตำแหน่ง</label><input type="text" id="m_position"></div>
+        <div class="form-row"><label>รหัสพนักงาน</label><input type="text" id="m_employee_code" required></div>
+        <div class="form-row"><label>อีเมล</label><input type="email" id="m_email"></div>
+        <div class="form-row"><label>เบอร์ติดต่อ</label><input type="text" id="m_phone"></div>
+      </div>
+
+      <div class="form-row">
+        <label>สำนักงาน</label>
+        <select id="m_office_id" required></select>
+        <div class="subtitle" style="margin-top:4px; font-size:11.5px;">ถ้าเปลี่ยนสำนักงาน ระบบจะย้ายเรื่องที่ช่างคนนี้รับผิดชอบอยู่ในปัจจุบันไปสำนักงานใหม่ให้อัตโนมัติด้วย</div>
+      </div>
+
+      <div class="form-row">
+        <label>Username: <b id="m_username_display"></b> <span class="subtitle" style="font-size:11.5px;">(แก้ไขไม่ได้ ใช้เป็นชื่อเข้าสู่ระบบถาวร)</span></label>
+      </div>
+
+      <div class="form-row">
+        <label>รูปถ่าย</label>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img id="m_photo_preview" style="display:none; width:64px; height:64px; border-radius:50%; object-fit:cover; border:1px solid #E1E7EE;">
+          <input type="file" id="m_photo" accept="image/*">
+          <button type="button" class="btn btn-outline btn-sm" id="m_remove_photo_btn" style="display:none;">ลบรูป</button>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-row"><label><input type="checkbox" id="m_is_active" style="width:auto; display:inline-block; margin-right:6px;"> ยังปฏิบัติงานอยู่ (แสดงในรายชื่อช่างรังวัด)</label></div>
+        <div class="form-row"><label><input type="checkbox" id="m_user_is_active" style="width:auto; display:inline-block; margin-right:6px;"> เปิดให้เข้าสู่ระบบได้</label></div>
+      </div>
+
+      <div class="form-row" id="m_reset_password_row" style="display:none;">
+        <label>ตั้งรหัสผ่านใหม่ (เว้นว่างถ้าไม่ต้องการเปลี่ยน)</label>
+        <input type="text" id="m_new_password" autocomplete="off" placeholder="อย่างน้อย 8 ตัวอักษร">
+      </div>
+
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" onclick="closeManageModal()">ยกเลิก</button>
+      </div>
+      <div id="manageFormError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+  let offices = [];
+  let editingId = null;
+
+  async function init() {
+    currentUser = await renderTopbar("surveyors-manage");
+    if (!currentUser) return;
+    if (!["system_admin", "administrator", "province_admin", "branch_admin"].includes(currentUser.role)) {
+      document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้บริหาร/ผู้ดูแลระบบ/ผู้ดูแลระดับจังหวัด/เจ้าพนักงานที่ดินสาขา</div>";
+      return;
+    }
+    document.getElementById("m_reset_password_row").style.display = currentUser.role === "system_admin" ? "block" : "none";
+    if (["system_admin", "province_admin"].includes(currentUser.role)) {
+      document.getElementById("syncOfficeBtn").style.display = "inline-block";
+    }
+    offices = (await apiFetch("/offices")) || [];
+    if (currentUser.role === "province_admin") {
+      const myOffice = offices.find((o) => o.id === currentUser.office_id);
+      if (myOffice) offices = offices.filter((o) => o.province === myOffice.province);
+    } else if (currentUser.role === "branch_admin") {
+      offices = offices.filter((o) => o.id === currentUser.office_id);
+    }
+    document.getElementById("m_office_id").innerHTML = offices.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    await loadSurveyors();
+
+    // ลิงก์มาจากปุ่ม "แก้ไข" ในหน้าภาพรวมช่างรังวัด (surveyors.html) จะพ่วง ?id=... มาเปิดฟอร์มแก้ไขให้ทันที
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkId = params.get("id");
+    if (deepLinkId && (window._surveyorRows || []).some((r) => r.id === deepLinkId)) {
+      openManage(deepLinkId);
+    }
+  }
+
+  async function loadSurveyors() {
+    const rows = await apiFetch("/surveyors");
+    const tbody = document.getElementById("surveyorsBody");
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="10" class="empty-state">ยังไม่มีข้อมูลช่างรังวัด</td></tr>`;
+      return;
+    }
+    window._surveyorRows = rows;
+    tbody.innerHTML = rows
+      .map((s) => {
+        const surveyorBadge = s.is_active
+          ? `<span class="badge status-COMPLETED">ปฏิบัติงาน</span>`
+          : `<span class="badge status-CANCELLED">ไม่ได้ปฏิบัติงาน</span>`;
+        const loginBadge = s.user_is_active
+          ? `<span class="badge status-COMPLETED">เข้าได้</span>`
+          : `<span class="badge status-CANCELLED">ปิดใช้งาน</span>`;
+        return `
+        <tr>
+          <td><div class="avatar-circle" id="avatar-${s.id}">${(s.full_name || "?").charAt(0)}</div></td>
+          <td>${s.employee_code}</td>
+          <td>${s.full_name}${s.nickname ? " (" + s.nickname + ")" : ""}</td>
+          <td>${s.position || "-"}</td>
+          <td>${s.office_name}</td>
+          <td>${s.username}</td>
+          <td>${s.email || "-"} / ${s.phone || "-"}</td>
+          <td>${surveyorBadge}</td>
+          <td>${loginBadge}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="openManage('${s.id}')">แก้ไข</button></td>
+        </tr>`;
+      })
+      .join("");
+
+    rows.forEach(async (s) => {
+      if (!s.photo_url) return;
+      const url = await fetchAuthedBlobUrl(s.photo_url);
+      const avatar = document.getElementById("avatar-" + s.id);
+      if (avatar && url) avatar.innerHTML = `<img src="${url}" alt="">`;
+    });
+  }
+
+  async function openManage(surveyorId) {
+    const s = (window._surveyorRows || []).find((r) => r.id === surveyorId);
+    if (!s) return;
+    editingId = surveyorId;
+    document.getElementById("m_title_name").textContent = s.full_name + (s.nickname ? " (" + s.nickname + ")" : "");
+    document.getElementById("m_full_name").value = s.full_name || "";
+    document.getElementById("m_nickname").value = s.nickname || "";
+    document.getElementById("m_position").value = s.position || "";
+    document.getElementById("m_employee_code").value = s.employee_code || "";
+    document.getElementById("m_email").value = s.email || "";
+    document.getElementById("m_phone").value = s.phone || "";
+    document.getElementById("m_office_id").value = s.office_id || "";
+    document.getElementById("m_username_display").textContent = s.username;
+    document.getElementById("m_is_active").checked = !!s.is_active;
+    document.getElementById("m_user_is_active").checked = !!s.user_is_active;
+    document.getElementById("m_new_password").value = "";
+    document.getElementById("m_photo").value = "";
+    document.getElementById("manageFormError").style.display = "none";
+
+    const preview = document.getElementById("m_photo_preview");
+    const removeBtn = document.getElementById("m_remove_photo_btn");
+    preview.style.display = "none";
+    removeBtn.style.display = "none";
+    if (s.photo_url) {
+      const url = await fetchAuthedBlobUrl(s.photo_url);
+      if (url) {
+        preview.src = url;
+        preview.style.display = "block";
+        removeBtn.style.display = "inline-block";
+      }
+    }
+    document.getElementById("manageModal").style.display = "flex";
+  }
+
+  function closeManageModal() {
+    document.getElementById("manageModal").style.display = "none";
+  }
+
+  document.getElementById("syncOfficeBtn").addEventListener("click", async () => {
+    const notice = document.getElementById("moveNotice");
+    notice.style.display = "none";
+    const result = await apiFetch("/surveyors/sync-office-cases", { method: "POST" });
+    if (!result) return;
+    if (result.total_moved > 0) {
+      notice.textContent = `ซิงก์เรียบร้อย — ย้ายเรื่อง ${result.total_moved} เรื่อง ของช่าง ${result.surveyors_affected} คน ให้ตรงกับสำนักงานปัจจุบันแล้ว`;
+    } else {
+      notice.textContent = `ตรวจสอบแล้ว — ข้อมูลสำนักงานของทุกเรื่องตรงกับช่างที่รับผิดชอบอยู่แล้ว ไม่มีอะไรต้องแก้`;
+    }
+    notice.style.display = "block";
+    await loadSurveyors();
+  });
+
+  document.getElementById("m_remove_photo_btn").addEventListener("click", async () => {
+    if (!editingId) return;
+    await apiFetch("/surveyors/" + editingId + "/photo", { method: "DELETE" });
+    document.getElementById("m_photo_preview").style.display = "none";
+    document.getElementById("m_remove_photo_btn").style.display = "none";
+    await loadSurveyors();
+  });
+
+  document.getElementById("manageForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("manageFormError");
+    errorBox.style.display = "none";
+    try {
+      const newPassword = document.getElementById("m_new_password").value.trim();
+      if (newPassword && newPassword.length < 8) {
+        throw new Error("รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร");
+      }
+
+      const payload = {
+        full_name: document.getElementById("m_full_name").value,
+        nickname: document.getElementById("m_nickname").value || null,
+        position: document.getElementById("m_position").value || null,
+        employee_code: document.getElementById("m_employee_code").value,
+        email: document.getElementById("m_email").value || null,
+        phone: document.getElementById("m_phone").value || null,
+        office_id: document.getElementById("m_office_id").value,
+        is_active: document.getElementById("m_is_active").checked ? 1 : 0,
+        user_is_active: document.getElementById("m_user_is_active").checked ? 1 : 0,
+      };
+      const result = await apiFetch("/surveyors/" + editingId, { method: "PATCH", body: JSON.stringify(payload) });
+
+      const photoFile = document.getElementById("m_photo").files[0];
+      if (photoFile) {
+        await apiUpload("/surveyors/" + editingId + "/photo", photoFile);
+      }
+
+      if (newPassword && currentUser.role === "system_admin") {
+        await apiFetch("/users/" + result.user_id + "/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ new_password: newPassword }),
+        });
+      }
+
+      closeManageModal();
+
+      const notice = document.getElementById("moveNotice");
+      if (result.moved_case_count > 0) {
+        notice.textContent = `บันทึกเรียบร้อย — ย้ายสำนักงานแล้ว และย้ายเรื่องที่ช่างคนนี้รับผิดชอบอยู่ ${result.moved_case_count} เรื่อง ไปสำนักงานใหม่ให้อัตโนมัติด้วย`;
+        notice.style.display = "block";
+      } else {
+        notice.style.display = "none";
+      }
+
+      await loadSurveyors();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

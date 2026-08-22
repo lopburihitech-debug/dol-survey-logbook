@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>นำเข้างานจากไฟล์ — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <h1>นำเข้างานค้างจากไฟล์ CSV</h1>
+  <div class="subtitle">ใช้เมื่อมีข้อมูลงานค้างเดิมของช่างรังวัดคนใดคนหนึ่งอยู่ใน Google Sheets/Excel อยู่แล้ว จำนวนมาก — นำเข้าทีเดียวได้เลย ไม่ต้องพิมพ์เพิ่มทีละเรื่อง</div>
+
+  <div class="card">
+    <h2>1. เตรียมไฟล์ CSV</h2>
+    <div class="hint-box" style="margin-top:0;">
+      คอลัมน์ที่<b>ต้องมี</b>: <b>รว.19</b>, <b>ชื่อผู้ขอรังวัด</b>, <b>ประเภท</b> (ต้องสะกดตรงกับชื่อประเภทงานในระบบเป๊ะๆ — ดูรายชื่อทั้งหมดด้านล่าง)<br>
+      คอลัมน์ที่มีก็ใส่ ไม่มีก็เว้นว่างได้: <b>วันที่รับเรื่อง</b>, <b>วันที่นัดรังวัด</b> (รองรับหลายรูปแบบ เช่น 2569-08-22, 22/08/2569 หรือ "22 ส.ค. 2569" — ใส่ปี พ.ศ. หรือ ค.ศ. ก็ได้ ระบบแปลงให้อัตโนมัติ), <b>เบอร์ติดต่อ/หมายเหตุ</b>, <b>สถานะเริ่มต้น</b> (เว้นว่างไว้ให้ระบบเลือกสถานะที่เหมาะสมให้อัตโนมัติจากข้อมูลแถวนั้น)<br>
+      ถ้าเลข รว.19 ซ้ำกับที่มีอยู่แล้วในระบบ หรือแถวไหนข้อมูลไม่ครบ ระบบจะข้ามเฉพาะแถวนั้นและแจ้งเหตุผลให้ทราบ ไม่ทำให้แถวอื่นที่ถูกต้องนำเข้าไม่สำเร็จไปด้วย
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-outline" id="downloadTemplateBtn">⬇ ดาวน์โหลดเทมเพลต CSV</button>
+      <button type="button" class="btn btn-outline" id="toggleTypesBtn">ดูรายชื่อประเภทงานทั้งหมดในระบบ</button>
+    </div>
+    <div id="typesBox" style="display:none; margin-top:12px; max-height:220px; overflow-y:auto; border:1px solid #E7EEE9; border-radius:8px; padding:10px 14px; font-size:13px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. เลือกสำนักงาน / ช่างรังวัดที่รับผิดชอบ</h2>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>ช่างรังวัดที่รับผิดชอบงานทั้งหมดในไฟล์นี้</label>
+        <select id="ci_surveyor_id"><option value="">— ไม่ระบุ (นำเข้าแบบยังไม่มอบหมาย) —</option></select>
+      </div>
+      <div class="form-row">
+        <label>สำนักงาน</label>
+        <select id="ci_office_id" required></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. เลือกไฟล์และนำเข้า</h2>
+    <div class="form-row">
+      <label>ไฟล์ CSV</label>
+      <input type="file" id="ci_file" accept=".csv,text/csv">
+    </div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-primary" id="importBtn">นำเข้าข้อมูล</button>
+    </div>
+    <div id="importError" class="error-text" style="display:none;"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none;">
+    <h2>ผลการนำเข้า</h2>
+    <div id="resultSummary"></div>
+    <div id="skippedBox" style="display:none; margin-top:14px;">
+      <div style="font-weight:600; font-size:13.5px; color:var(--danger); margin-bottom:8px;">แถวที่ข้าม (ต้องแก้ไขแล้วนำเข้าใหม่เฉพาะแถวเหล่านี้)</div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>แถวที่ (ในไฟล์)</th><th>รว.19</th><th>เหตุผล</th></tr></thead>
+          <tbody id="skippedBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+  let surveyorsCache = [];
+
+  async function init() {
+    currentUser = await renderTopbar("cases-import");
+    if (!currentUser) return;
+    if (!["system_admin", "administrator", "province_admin"].includes(currentUser.role)) {
+      document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบและผู้บริหาร</div>";
+      return;
+    }
+    await Promise.all([loadOffices(), loadSurveyors(), loadSurveyTypes()]);
+  }
+
+  async function loadOffices() {
+    let offices = (await apiFetch("/offices")) || [];
+    if (currentUser.role === "province_admin") {
+      const myOffice = offices.find((o) => o.id === currentUser.office_id);
+      if (myOffice) offices = offices.filter((o) => o.province === myOffice.province);
+    }
+    const sel = document.getElementById("ci_office_id");
+    sel.innerHTML = offices.map((o) => `<option value="${o.id}">${o.name} (${o.province})</option>`).join("");
+  }
+
+  async function loadSurveyors() {
+    const rows = await apiFetch("/surveyors");
+    surveyorsCache = rows || [];
+    const sel = document.getElementById("ci_surveyor_id");
+    sel.innerHTML =
+      `<option value="">— ไม่ระบุ (นำเข้าแบบยังไม่มอบหมาย) —</option>` +
+      surveyorsCache.map((s) => `<option value="${s.id}" data-office="${s.office_id}">${s.full_name} (${s.employee_code})</option>`).join("");
+    sel.addEventListener("change", () => {
+      const opt = sel.options[sel.selectedIndex];
+      const officeId = opt.getAttribute("data-office");
+      const officeSel = document.getElementById("ci_office_id");
+      if (officeId) {
+        officeSel.value = officeId;
+        officeSel.disabled = true;
+      } else {
+        officeSel.disabled = false;
+      }
+    });
+  }
+
+  async function loadSurveyTypes() {
+    const types = await apiFetch("/survey-types");
+    const box = document.getElementById("typesBox");
+    box.innerHTML = (types || []).map((t) => `<div style="padding:3px 0; border-bottom:1px solid #F1F5F1;">${t.name}</div>`).join("");
+  }
+
+  document.getElementById("toggleTypesBtn").addEventListener("click", () => {
+    const box = document.getElementById("typesBox");
+    box.style.display = box.style.display === "none" ? "block" : "none";
+  });
+
+  function toCsvField(value) {
+    const s = String(value ?? "");
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  document.getElementById("downloadTemplateBtn").addEventListener("click", () => {
+    const headers = ["รว.19", "ชื่อผู้ขอรังวัด", "ประเภท", "วันที่รับเรื่อง", "วันที่นัดรังวัด", "เบอร์ติดต่อ/หมายเหตุ", "สถานะเริ่มต้น"];
+    const example = ["1494/2566", "นางสาวตัวอย่าง ใจดี", "ออกโฉนดที่ดิน", "2025-12-01", "2025-12-12", "", ""];
+    const csv = [headers, example].map((row) => row.map(toCsvField).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "เทมเพลตนำเข้างาน.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("importBtn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("importError");
+    errorBox.style.display = "none";
+    const fileInput = document.getElementById("ci_file");
+    const file = fileInput.files[0];
+    const officeId = document.getElementById("ci_office_id").value;
+    const surveyorId = document.getElementById("ci_surveyor_id").value;
+
+    if (!file) {
+      errorBox.textContent = "กรุณาเลือกไฟล์ CSV ก่อน";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (!officeId) {
+      errorBox.textContent = "กรุณาเลือกสำนักงาน";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    const btn = document.getElementById("importBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังนำเข้า...";
+    try {
+      const extra = { office_id: officeId };
+      if (surveyorId) extra.surveyor_id = surveyorId;
+      const result = await apiUpload("/survey-cases/import", file, extra);
+      renderResult(result);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "นำเข้าข้อมูล";
+    }
+  });
+
+  function renderResult(result) {
+    document.getElementById("resultCard").style.display = "block";
+    const summary = document.getElementById("resultSummary");
+    const importedCount = result.imported || 0;
+    const skipped = result.skipped || [];
+    summary.innerHTML = `
+      <div style="display:flex; gap:20px; flex-wrap:wrap;">
+        <div><span class="badge status-COMPLETED" style="font-size:14px; padding:5px 14px;">นำเข้าสำเร็จ ${importedCount} รายการ</span></div>
+        ${skipped.length ? `<div><span class="badge status-CANCELLED" style="font-size:14px; padding:5px 14px;">ข้าม ${skipped.length} รายการ</span></div>` : ""}
+      </div>
+    `;
+    const skippedBox = document.getElementById("skippedBox");
+    if (skipped.length) {
+      skippedBox.style.display = "block";
+      document.getElementById("skippedBody").innerHTML = skipped
+        .map((s) => `<tr><td>${s.row}</td><td>${s.case_code || "-"}</td><td>${s.reason}</td></tr>`)
+        .join("");
+    } else {
+      skippedBox.style.display = "none";
+    }
+    document.getElementById("resultCard").scrollIntoView({ behavior: "smooth" });
+  }
+
+  init();
+</script>
+</body>
+</html>

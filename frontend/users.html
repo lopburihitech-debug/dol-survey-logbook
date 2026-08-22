@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดการผู้ใช้งาน — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>จัดการผู้ใช้งาน</h1>
+      <div class="subtitle">รายชื่อบัญชีผู้ใช้ทั้งหมดในระบบ เปลี่ยนบทบาท ปิด/เปิดใช้งาน และตั้งรหัสผ่านใหม่ได้จากหน้านี้</div>
+    </div>
+    <button class="btn btn-primary" id="newUserBtn">+ เพิ่มผู้ใช้งาน</button>
+  </div>
+
+  <div class="card">
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Username</th><th>ชื่อ-นามสกุล</th><th>บทบาท</th><th>สำนักงาน</th><th>สถานะ</th><th>2FA</th><th></th></tr>
+      </thead>
+      <tbody id="usersBody"><tr><td colspan="7" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: เพิ่ม/แก้ไขผู้ใช้งาน -->
+<div class="modal-backdrop" id="userModal" style="display:none;">
+  <div class="modal">
+    <h3 id="userModalTitle">เพิ่มผู้ใช้งาน</h3>
+    <form id="userForm">
+      <div id="createOnlyFields">
+        <div class="form-row"><label>Username (สำหรับเข้าสู่ระบบ)</label><input type="text" id="u_username" autocomplete="off"></div>
+        <div class="form-row"><label>รหัสผ่านเริ่มต้น</label><input type="text" id="u_password" autocomplete="off"></div>
+      </div>
+      <div class="form-row"><label>ชื่อ-นามสกุล</label><input type="text" id="u_full_name" required></div>
+      <div class="form-grid">
+        <div class="form-row"><label>อีเมล</label><input type="email" id="u_email"></div>
+        <div class="form-row"><label>เบอร์โทร</label><input type="text" id="u_phone"></div>
+        <div class="form-row"><label>บทบาท</label><select id="u_role" required></select></div>
+        <div class="form-row"><label>สำนักงาน</label><select id="u_office_id"></select></div>
+      </div>
+      <div class="subtitle" id="u_surveyor_hint" style="display:none; margin:-8px 0 12px;">
+        หมายเหตุ: ถ้าจะสร้างบัญชีสำหรับช่างรังวัด แนะนำให้ใช้หน้า "ช่างรังวัด" &rarr; "+ เพิ่มช่างรังวัด" แทน
+        เพราะจะสร้างบัญชีผู้ใช้พร้อมข้อมูลช่างรังวัด (รหัสพนักงาน ฯลฯ) ให้ในขั้นตอนเดียว
+      </div>
+      <div class="subtitle" id="u_province_admin_hint" style="display:none; margin:-8px 0 12px;">
+        หมายเหตุ: ผู้ดูแลระดับจังหวัดจะเห็น/จัดการได้เฉพาะจังหวัดของ "สำนักงาน" ที่เลือกไว้ด้านบน (ระบบใช้สำนักงานนี้
+        อ้างอิงว่าเป็นจังหวัดไหน) กรุณาเลือกสำนักงานที่อยู่ในจังหวัดที่ต้องการมอบหมายให้ดูแล
+      </div>
+      <div class="subtitle" id="u_branch_admin_hint" style="display:none; margin:-8px 0 12px;">
+        หมายเหตุ: เจ้าพนักงานที่ดินสาขาจะเห็น/จัดการได้เฉพาะ "สำนักงาน" ที่เลือกไว้ด้านบนเท่านั้น (สาขาเดียว ไม่รวมสำนักงานอื่น
+        แม้อยู่จังหวัดเดียวกัน) — เพิ่ม/แก้ไขบัญชีช่างรังวัดในสำนักงานนี้ได้จากหน้า "จัดการช่างรังวัด"
+      </div>
+      <div class="form-row" id="u_active_row" style="display:none;">
+        <label><input type="checkbox" id="u_is_active" style="width:auto; display:inline-block; margin-right:6px;"> ยังใช้งานอยู่ (ยกเลิกติ๊กเพื่อปิดใช้งาน — ผู้ใช้จะล็อกอินเข้าระบบไม่ได้ทันที)</label>
+        <div class="subtitle" id="u_self_hint" style="display:none; margin:4px 0 0;">ไม่สามารถปิดใช้งานหรือเปลี่ยนบทบาทบัญชีของตัวเองได้</div>
+      </div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" onclick="closeUserModal()">ยกเลิก</button>
+      </div>
+      <div id="userFormError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: ตั้งรหัสผ่านใหม่ -->
+<div class="modal-backdrop" id="pwModal" style="display:none;">
+  <div class="modal">
+    <h3>ตั้งรหัสผ่านใหม่</h3>
+    <div class="subtitle" id="pwModalUserLabel" style="margin-top:-6px;"></div>
+    <form id="pwForm">
+      <div class="form-row"><label>รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)</label><input type="text" id="pw_new" autocomplete="off"></div>
+      <div class="form-row"><label>ยืนยันรหัสผ่านใหม่</label><input type="text" id="pw_confirm" autocomplete="off"></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">ตั้งรหัสผ่านใหม่</button>
+        <button type="button" class="btn btn-outline" onclick="closePwModal()">ยกเลิก</button>
+      </div>
+      <div id="pwFormError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+  let currentUser = null;
+  let offices = [];
+  let editingId = null;
+  let pwTargetId = null;
+
+  const ROLE_OPTIONS = [
+    { value: "system_admin", label: "ผู้ดูแลระบบ" },
+    { value: "administrator", label: "ผู้บริหาร" },
+    { value: "province_admin", label: "ผู้ดูแลระดับจังหวัด" },
+    { value: "branch_admin", label: "เจ้าพนักงานที่ดินสาขา" },
+    { value: "supervisor", label: "หัวหน้าช่างรังวัด" },
+    { value: "surveyor", label: "ช่างรังวัด" },
+    { value: "citizen", label: "ประชาชน" },
+  ];
+
+  async function init() {
+    currentUser = await renderTopbar("users");
+    if (!currentUser) return;
+    if (currentUser.role !== "system_admin") {
+      document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบ</div>";
+      return;
+    }
+    offices = (await apiFetch("/offices")) || [];
+    const officeSelect = document.getElementById("u_office_id");
+    officeSelect.innerHTML = `<option value="">-- ไม่ระบุ --</option>` + offices.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    const roleSelect = document.getElementById("u_role");
+    roleSelect.innerHTML = ROLE_OPTIONS.map((r) => `<option value="${r.value}">${r.label}</option>`).join("");
+    document.getElementById("u_role").addEventListener("change", updateSurveyorHint);
+    await loadUsers();
+  }
+
+  function updateSurveyorHint() {
+    const role = document.getElementById("u_role").value;
+    document.getElementById("u_surveyor_hint").style.display = !editingId && role === "surveyor" ? "block" : "none";
+    document.getElementById("u_province_admin_hint").style.display = role === "province_admin" ? "block" : "none";
+    document.getElementById("u_branch_admin_hint").style.display = role === "branch_admin" ? "block" : "none";
+  }
+
+  async function loadUsers() {
+    const rows = await apiFetch("/users");
+    const tbody = document.getElementById("usersBody");
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ยังไม่มีข้อมูลผู้ใช้งาน</td></tr>`;
+      return;
+    }
+    window._userRows = rows;
+    tbody.innerHTML = rows
+      .map((u) => {
+        const roleLabel = ROLE_LABELS[u.role] || u.role;
+        const statusBadgeHtml = u.is_active ? `<span class="badge status-COMPLETED">ใช้งานอยู่</span>` : `<span class="badge status-CANCELLED">ปิดใช้งาน</span>`;
+        const selfTag = u.id === currentUser.id ? ` <span class="badge">คุณ</span>` : "";
+        const mfaBadgeHtml = u.mfa_enabled ? `<span class="badge status-COMPLETED">เปิดใช้งาน</span>` : `<span class="badge">-</span>`;
+        const mfaResetBtn = u.mfa_enabled ? `<button class="btn btn-outline btn-sm" onclick="resetUserMfa('${u.id}', '${u.username}')">ปิดการยืนยัน 2 ชั้น</button>` : "";
+        return `
+        <tr>
+          <td>${u.username}</td>
+          <td>${u.full_name}${selfTag}</td>
+          <td>${roleLabel}</td>
+          <td>${u.office_name || "-"}</td>
+          <td>${statusBadgeHtml}</td>
+          <td>${mfaBadgeHtml}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-outline btn-sm" onclick="openEdit('${u.id}')">แก้ไข</button>
+            <button class="btn btn-outline btn-sm" onclick="openPwModal('${u.id}')">ตั้งรหัสผ่านใหม่</button>
+            ${mfaResetBtn}
+          </td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function openCreate() {
+    editingId = null;
+    document.getElementById("userModalTitle").textContent = "เพิ่มผู้ใช้งาน";
+    document.getElementById("createOnlyFields").style.display = "block";
+    document.getElementById("u_active_row").style.display = "none";
+    document.getElementById("userForm").reset();
+    updateSurveyorHint();
+    document.getElementById("userModal").style.display = "flex";
+  }
+
+  function openEdit(userId) {
+    const u = (window._userRows || []).find((r) => r.id === userId);
+    if (!u) return;
+    editingId = userId;
+    document.getElementById("userModalTitle").textContent = "แก้ไขข้อมูลผู้ใช้งาน";
+    document.getElementById("createOnlyFields").style.display = "none";
+    document.getElementById("u_full_name").value = u.full_name || "";
+    document.getElementById("u_email").value = u.email || "";
+    document.getElementById("u_phone").value = u.phone || "";
+    document.getElementById("u_role").value = u.role;
+    document.getElementById("u_office_id").value = u.office_id || "";
+    document.getElementById("u_active_row").style.display = "block";
+    document.getElementById("u_is_active").checked = !!u.is_active;
+    const isSelf = userId === currentUser.id;
+    document.getElementById("u_is_active").disabled = isSelf;
+    document.getElementById("u_role").disabled = isSelf;
+    document.getElementById("u_self_hint").style.display = isSelf ? "block" : "none";
+    document.getElementById("u_surveyor_hint").style.display = "none";
+    document.getElementById("userModal").style.display = "flex";
+  }
+
+  function closeUserModal() {
+    document.getElementById("userModal").style.display = "none";
+    document.getElementById("userFormError").style.display = "none";
+    document.getElementById("u_is_active").disabled = false;
+    document.getElementById("u_role").disabled = false;
+  }
+
+  document.getElementById("newUserBtn").addEventListener("click", openCreate);
+
+  document.getElementById("userForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("userFormError");
+    errorBox.style.display = "none";
+    try {
+      if (editingId) {
+        const payload = {
+          full_name: document.getElementById("u_full_name").value,
+          email: document.getElementById("u_email").value || null,
+          phone: document.getElementById("u_phone").value || null,
+          office_id: document.getElementById("u_office_id").value || null,
+        };
+        if (!document.getElementById("u_role").disabled) payload.role = document.getElementById("u_role").value;
+        if (!document.getElementById("u_is_active").disabled) payload.is_active = document.getElementById("u_is_active").checked ? 1 : 0;
+        await apiFetch("/users/" + editingId, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        const payload = {
+          username: document.getElementById("u_username").value,
+          password: document.getElementById("u_password").value,
+          full_name: document.getElementById("u_full_name").value,
+          email: document.getElementById("u_email").value || null,
+          phone: document.getElementById("u_phone").value || null,
+          role: document.getElementById("u_role").value,
+          office_id: document.getElementById("u_office_id").value || null,
+        };
+        await apiFetch("/users", { method: "POST", body: JSON.stringify(payload) });
+      }
+      closeUserModal();
+      await loadUsers();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  async function resetUserMfa(userId, username) {
+    if (!confirm(`ปิดการยืนยันตัวตน 2 ชั้นของบัญชี "${username}" ใช่หรือไม่? ใช้กรณีผู้ใช้ทำอุปกรณ์ยืนยันตัวตนหายและเข้าระบบไม่ได้เลย`)) return;
+    try {
+      await apiFetch("/users/" + userId + "/mfa/disable", { method: "POST" });
+      await loadUsers();
+      alert("ปิดใช้งาน 2FA ให้ผู้ใช้คนนี้แล้ว");
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function openPwModal(userId) {
+    const u = (window._userRows || []).find((r) => r.id === userId);
+    if (!u) return;
+    pwTargetId = userId;
+    document.getElementById("pwModalUserLabel").textContent = u.username + " (" + u.full_name + ")";
+    document.getElementById("pwForm").reset();
+    document.getElementById("pwFormError").style.display = "none";
+    document.getElementById("pwModal").style.display = "flex";
+  }
+
+  function closePwModal() {
+    document.getElementById("pwModal").style.display = "none";
+  }
+
+  document.getElementById("pwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("pwFormError");
+    errorBox.style.display = "none";
+    const newPw = document.getElementById("pw_new").value;
+    const confirmPw = document.getElementById("pw_confirm").value;
+    if (newPw.length < 8) {
+      errorBox.textContent = "รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (newPw !== confirmPw) {
+      errorBox.textContent = "รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน";
+      errorBox.style.display = "block";
+      return;
+    }
+    try {
+      await apiFetch("/users/" + pwTargetId + "/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ new_password: newPw }),
+      });
+      closePwModal();
+      alert("ตั้งรหัสผ่านใหม่สำเร็จ");
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

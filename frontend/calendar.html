@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ปฏิทินนัดรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <h1>ปฏิทินนัดรังวัด</h1>
+  <div class="subtitle">แต่ละช่องแสดงชื่อช่างรังวัดที่มีนัดวันนั้น — คลิกชื่อช่างเพื่อดูรายละเอียดเรื่อง</div>
+
+  <div class="card" id="filterCard" style="display:none;">
+    <div class="filters">
+      <select id="provinceFilter" style="display:none;">
+        <option value="">ทุกจังหวัด</option>
+      </select>
+      <select id="officeFilter" style="display:none;">
+        <option value="">ทุกสำนักงาน</option>
+      </select>
+      <button class="btn btn-outline btn-sm" id="clearFiltersBtn" type="button">ล้างตัวกรอง</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0;">วันนี้ (<span id="todayLabel"></span>) ช่างรังวัดออกไปรังวัด</h2>
+    <div id="todayOutBox"><div class="loading">กำลังโหลด...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="cal-header">
+      <button class="btn btn-outline btn-sm" id="prevMonthBtn">&lsaquo; เดือนก่อนหน้า</button>
+      <div class="cal-month-label" id="monthLabel">-</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-outline btn-sm" id="todayBtn">วันนี้</button>
+        <button class="btn btn-outline btn-sm" id="nextMonthBtn">เดือนถัดไป &rsaquo;</button>
+      </div>
+    </div>
+    <div id="calBox"><div class="loading">กำลังโหลด...</div></div>
+  </div>
+</div>
+
+<!-- Modal: รายละเอียดย่อของเรื่อง -->
+<div class="modal-backdrop" id="casePopup" style="display:none;">
+  <div class="modal">
+    <h3 id="cp_code">-</h3>
+    <div class="info-grid">
+      <div><span class="k">ผู้ขอ:</span> <span id="cp_requester">-</span></div>
+      <div><span class="k">ประเภทงาน:</span> <span id="cp_type">-</span></div>
+      <div><span class="k">ช่างรับผิดชอบ:</span> <span id="cp_surveyor">-</span></div>
+      <div><span class="k">วันนัดรังวัด:</span> <span id="cp_appointment">-</span></div>
+      <div><span class="k">สถานะ:</span> <span id="cp_status">-</span></div>
+    </div>
+    <div class="action-bar">
+      <button class="btn btn-primary" id="cp_viewBtn">ดูรายละเอียด</button>
+      <button type="button" class="btn btn-outline" onclick="closeCasePopup()">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: รายการเรื่องทั้งหมดของวันที่มีมากกว่าที่แสดงในช่องปฏิทิน -->
+<div class="modal-backdrop" id="dayListModal" style="display:none;">
+  <div class="modal">
+    <h3 id="dl_date">-</h3>
+    <div id="dl_list"></div>
+    <div class="action-bar">
+      <button type="button" class="btn btn-outline" onclick="closeDayListModal()">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+
+  const now = new Date();
+  const TODAY_YEAR = now.getFullYear();
+  const TODAY_MONTH = now.getMonth();
+  const TODAY_DATE = now.getDate();
+  const TODAY_STR = `${TODAY_YEAR}-${pad2(TODAY_MONTH + 1)}-${pad2(TODAY_DATE)}`;
+
+  let currentYear = TODAY_YEAR;
+  let currentMonth = TODAY_MONTH; // 0-indexed เหมือน Date.getMonth()
+  let typeMap = {};
+  let caseStore = {}; // id -> case object (รวมทั้งจากเดือนที่แสดงและจาก "วันนี้")
+  let currentUser = null;
+  let offices = [];
+  let officesById = {}; // office_id -> { name, province } ใช้แปล office_id ของแต่ละเรื่องเป็นจังหวัด/สำนักงานตอนกรอง
+  const filters = { province: "", officeId: "" };
+
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  // รวมศูนย์การอ่านข้อมูลช่างรับผิดชอบของเรื่องหนึ่งๆ ไว้ที่นี่ที่เดียว ใช้ได้ทั้งตอนจัดกลุ่มชิปในปฏิทิน
+  // และตอนแสดงรายการในหน้าต่างย่อย — key ใช้จัดกลุ่ม, short ใช้แสดงในชิปช่องเล็กๆของปฏิทิน (จำกัดพื้นที่),
+  // full ใช้แสดงในหน้าต่างที่มีพื้นที่มากกว่า (การ์ด "วันนี้ช่างออกไปรังวัด" / รายการของวัน)
+  function surveyorKeyOf(c) {
+    return c.assigned_surveyor ? c.assigned_surveyor.surveyor_id : "unassigned";
+  }
+  function surveyorShortLabel(c) {
+    if (!c.assigned_surveyor) return "ยังไม่มอบหมาย";
+    // ใช้ชื่อจริง (คำแรกของ full_name เช่น "นายสุภกิจ" จาก "นายสุภกิจ ใจดี") แทนชื่อเล่น — อ่านแล้วรู้ทันทีว่าเป็นใคร
+    // ต่างจากชื่อเล่นซึ่งบางทีสั้นหรือกำกวมเกินไปในช่องปฏิทินที่มีพื้นที่จำกัด
+    const full = c.assigned_surveyor.full_name || "";
+    return full.split(" ")[0] || full;
+  }
+  function surveyorFullLabel(c) {
+    if (!c.assigned_surveyor) return "ยังไม่มอบหมายช่าง";
+    return c.assigned_surveyor.full_name + (c.assigned_surveyor.nickname ? " (" + c.assigned_surveyor.nickname + ")" : "");
+  }
+  // จัดกลุ่มเรื่องของวันหนึ่งๆ ตามช่างรับผิดชอบ เรียงตามชื่อ (ช่างที่ยังไม่มอบหมายจะถูกจัดเป็นกลุ่มแยกต่างหาก)
+  function groupBySurveyor(dayCases) {
+    const groups = {};
+    dayCases.forEach((c) => {
+      const key = surveyorKeyOf(c);
+      if (!groups[key]) groups[key] = { key, shortLabel: surveyorShortLabel(c), fullLabel: surveyorFullLabel(c), cases: [] };
+      groups[key].cases.push(c);
+    });
+    return Object.values(groups).sort((a, b) => a.shortLabel.localeCompare(b.shortLabel, "th"));
+  }
+
+  // ขอบเขตวันที่สำหรับ query เดือนหนึ่งๆ: appointment_to เป็นวันแรกของเดือนถัดไป (ไม่รวมค่านี้) — ดู
+  // หมายเหตุการเปรียบเทียบ string ในฝั่ง backend (blueprints/survey_cases.py) ว่าทำไมต้องใช้ขอบเขตแบบนี้
+  function monthRange(year, month) {
+    const from = `${year}-${pad2(month + 1)}-01`;
+    const nextMonth = month === 11 ? 0 : month + 1;
+    const nextYear = month === 11 ? year + 1 : year;
+    const to = `${nextYear}-${pad2(nextMonth + 1)}-01`;
+    return { from, to };
+  }
+
+  async function init() {
+    currentUser = await renderTopbar("calendar");
+    if (!currentUser) return;
+    document.getElementById("todayLabel").textContent = fmtDateOnly(TODAY_STR);
+    typeMap = {};
+    const types = (await apiFetch("/survey-types")) || [];
+    types.forEach((t) => (typeMap[t.id] = t.name));
+
+    // ตัวกรองจังหวัด/สำนักงาน มีประโยชน์เฉพาะบทบาทที่มองเห็นได้มากกว่า 1 สำนักงาน (system_admin/administrator
+    // เห็นทุกจังหวัด, province_admin เห็นทุกสำนักงานในจังหวัดตัวเอง) — supervisor/surveyor ถูกจำกัดขอบเขตไว้แค่
+    // สำนักงานเดียวอยู่แล้วที่ backend (scope_case_filter) จึงไม่มีประโยชน์ที่จะแสดงตัวกรองนี้ให้เห็น
+    if (["system_admin", "administrator", "province_admin"].includes(currentUser.role)) {
+      offices = (await apiFetch("/offices")) || [];
+      if (currentUser.role === "province_admin") {
+        const myOffice = offices.find((o) => o.id === currentUser.office_id);
+        if (myOffice) offices = offices.filter((o) => o.province === myOffice.province);
+      }
+      officesById = {};
+      offices.forEach((o) => (officesById[o.id] = o));
+      if (offices.length > 1) {
+        document.getElementById("filterCard").style.display = "";
+        setupProvinceFilterOptions();
+        setupOfficeFilterOptions("");
+        bindFilterControls();
+      }
+    }
+
+    document.getElementById("prevMonthBtn").addEventListener("click", () => changeMonth(-1));
+    document.getElementById("nextMonthBtn").addEventListener("click", () => changeMonth(1));
+    document.getElementById("todayBtn").addEventListener("click", () => {
+      currentYear = TODAY_YEAR;
+      currentMonth = TODAY_MONTH;
+      loadMonth();
+    });
+
+    await loadTodayOut();
+    await loadMonth();
+  }
+
+  // ---------------------------------------------------------------------------
+  // ตัวกรองจังหวัด/สำนักงาน — กรองฝั่ง client จากเรื่องที่โหลดมาแล้ว (เทียบ office_id ของแต่ละเรื่องกับ officesById)
+  // เพื่อไม่ต้องยิง API ซ้ำเวลาสลับตัวกรอง (โหลดของ "วันนี้"/เดือนที่แสดงมาแล้วชุดเดียว กรองซ้ำได้ทันที)
+  // ---------------------------------------------------------------------------
+  function setupProvinceFilterOptions() {
+    const sel = document.getElementById("provinceFilter");
+    const provinces = [...new Set(offices.map((o) => o.province).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+    if (provinces.length > 1) {
+      sel.style.display = "";
+      sel.innerHTML = `<option value="">ทุกจังหวัด</option>` + provinces.map((p) => `<option value="${p}">${p}</option>`).join("");
+      sel.value = filters.province;
+    } else {
+      sel.style.display = "none";
+      filters.province = "";
+    }
+  }
+
+  function setupOfficeFilterOptions(provinceFilterValue) {
+    const sel = document.getElementById("officeFilter");
+    const scoped = offices.filter((o) => !provinceFilterValue || o.province === provinceFilterValue);
+    const sorted = scoped.slice().sort((a, b) => a.name.localeCompare(b.name, "th"));
+    const showGroups = !provinceFilterValue && new Set(sorted.map((o) => o.province)).size > 1;
+    if (showGroups) {
+      const byProvince = new Map();
+      sorted.forEach((o) => {
+        if (!byProvince.has(o.province)) byProvince.set(o.province, []);
+        byProvince.get(o.province).push(o);
+      });
+      sel.innerHTML =
+        `<option value="">ทุกสำนักงาน</option>` +
+        [...byProvince.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0], "th"))
+          .map(([province, list]) => `<optgroup label="${province}">${list.map((o) => `<option value="${o.id}">${o.name}</option>`).join("")}</optgroup>`)
+          .join("");
+    } else {
+      sel.innerHTML = `<option value="">ทุกสำนักงาน</option>` + sorted.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    }
+    if (scoped.length > 1) {
+      sel.style.display = "";
+      sel.value = scoped.some((o) => o.id === filters.officeId) ? filters.officeId : "";
+      filters.officeId = sel.value;
+    } else {
+      sel.style.display = "none";
+      filters.officeId = "";
+    }
+  }
+
+  function bindFilterControls() {
+    document.getElementById("provinceFilter").addEventListener("change", (e) => {
+      filters.province = e.target.value;
+      setupOfficeFilterOptions(filters.province);
+      reloadWithFilters();
+    });
+    document.getElementById("officeFilter").addEventListener("change", (e) => {
+      filters.officeId = e.target.value;
+      reloadWithFilters();
+    });
+    document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+      filters.province = "";
+      filters.officeId = "";
+      setupProvinceFilterOptions();
+      setupOfficeFilterOptions("");
+      reloadWithFilters();
+    });
+  }
+
+  // เปลี่ยนตัวกรองแล้วต้องโหลดใหม่ทั้งการ์ด "วันนี้ช่างออกไปรังวัด" และปฏิทินเดือนที่กำลังแสดง เพราะทั้งคู่ดึงข้อมูล
+  // แยกกันคนละ query (คนละช่วงวันที่)
+  async function reloadWithFilters() {
+    await loadTodayOut();
+    await loadMonth();
+  }
+
+  // ตรงกับตัวกรองที่เลือกไว้หรือไม่ (เลือกสำนักงานเจาะจงมาก่อน ถ้าไม่ได้เลือกค่อยดูแค่ระดับจังหวัด)
+  function matchesOfficeFilter(c) {
+    if (filters.officeId) return c.office_id === filters.officeId;
+    if (filters.province) {
+      const office = officesById[c.office_id];
+      return !!office && office.province === filters.province;
+    }
+    return true;
+  }
+
+  function changeMonth(delta) {
+    currentMonth += delta;
+    if (currentMonth < 0) {
+      currentMonth = 11;
+      currentYear -= 1;
+    } else if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear += 1;
+    }
+    loadMonth();
+  }
+
+  // การ์ด "วันนี้ช่างรังวัดออกไปรังวัด" — ดึงเฉพาะเรื่องที่นัดรังวัดวันนี้พอดี ไม่ขึ้นกับเดือนที่กำลังเลื่อนดูในปฏิทิน
+  async function loadTodayOut() {
+    const tomorrow = new Date(TODAY_YEAR, TODAY_MONTH, TODAY_DATE + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${pad2(tomorrow.getMonth() + 1)}-${pad2(tomorrow.getDate())}`;
+    const params = new URLSearchParams({ appointment_from: TODAY_STR, appointment_to: tomorrowStr });
+    const cases = ((await apiFetch("/survey-cases?" + params.toString())) || []).filter(matchesOfficeFilter);
+    cases.forEach((c) => (caseStore[c.id] = c));
+
+    const box = document.getElementById("todayOutBox");
+    if (cases.length === 0) {
+      box.innerHTML = `<div class="empty-state">ไม่มีช่างรังวัดออกไปรังวัดวันนี้${filters.province || filters.officeId ? " (ตามตัวกรองที่เลือก)" : ""}</div>`;
+      return;
+    }
+
+    const groups = groupBySurveyor(cases);
+
+    box.innerHTML = `<div class="today-out-grid">` +
+      groups
+        .map(
+          (g) => `
+        <div class="today-out-card">
+          <div class="to-name">${g.fullLabel} <span class="badge">${g.cases.length} เรื่อง</span></div>
+          ${g.cases
+            .map((c) => `<div class="to-case" onclick="openCasePopup('${c.id}')">${c.case_code} — ${c.requester_name}</div>`)
+            .join("")}
+        </div>`
+        )
+        .join("") +
+      `</div>`;
+  }
+
+  async function loadMonth() {
+    document.getElementById("calBox").innerHTML = `<div class="loading">กำลังโหลด...</div>`;
+    const { from, to } = monthRange(currentYear, currentMonth);
+    const params = new URLSearchParams({ appointment_from: from, appointment_to: to });
+    const cases = ((await apiFetch("/survey-cases?" + params.toString())) || []).filter(matchesOfficeFilter);
+    cases.forEach((c) => (caseStore[c.id] = c));
+    renderCalendar(cases);
+  }
+
+  function renderCalendar(cases) {
+    const monthLabelDate = new Date(currentYear, currentMonth, 1);
+    document.getElementById("monthLabel").textContent = monthLabelDate.toLocaleDateString("th-TH", { year: "numeric", month: "long" });
+
+    // จัดกลุ่มเรื่องตาม "วันที่" ของ appointment_date (ตัดเอาแค่ YYYY-MM-DD ไม่สนใจเวลา และไม่ผ่าน Date object
+    // เพื่อเลี่ยงปัญหาการเลื่อนวันจาก timezone conversion)
+    const byDay = {};
+    cases.forEach((c) => {
+      if (!c.appointment_date) return;
+      const day = parseInt(c.appointment_date.slice(8, 10), 10);
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(c);
+    });
+
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const startWeekday = monthLabelDate.getDay(); // 0 = อาทิตย์
+    const totalCells = Math.ceil((startWeekday + daysInMonth) / 7) * 7;
+    const weekdayLabels = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+    let html = weekdayLabels.map((w) => `<div class="cal-weekday">${w}</div>`).join("");
+
+    for (let i = 0; i < totalCells; i++) {
+      const dayNum = i - startWeekday + 1;
+      if (dayNum < 1 || dayNum > daysInMonth) {
+        html += `<div class="cal-day other-month"></div>`;
+        continue;
+      }
+      const isToday = currentYear === TODAY_YEAR && currentMonth === TODAY_MONTH && dayNum === TODAY_DATE;
+      // ชิปในช่องปฏิทินแทนช่างรับผิดชอบหนึ่งคน (ไม่ใช่หนึ่งเรื่อง) — ถ้าช่างคนเดียวมีหลายเรื่องในวันเดียวกัน
+      // จะรวมเป็นชิปเดียวพร้อมตัวเลขจำนวนเรื่องต่อท้าย เพื่อไม่ให้ช่องปฏิทินรกเกินไป
+      const groups = groupBySurveyor(byDay[dayNum] || []);
+      const visible = groups.slice(0, 3);
+      const overflowCount = groups.length - visible.length;
+
+      const dateKey = `${currentYear}-${pad2(currentMonth + 1)}-${pad2(dayNum)}`;
+      html += `
+        <div class="cal-day${isToday ? " today" : ""}" data-day="${dayNum}">
+          <div class="cal-daynum">${dayNum}</div>
+          ${visible
+            .map(
+              (g) => `<div class="cal-chip${g.key === "unassigned" ? " unassigned" : ""}" onclick="openDayGroupOrCase('${dateKey}','${g.key}')">${g.shortLabel}${g.cases.length > 1 ? `(${g.cases.length})` : ""}</div>`
+            )
+            .join("")}
+          ${overflowCount > 0 ? `<div class="cal-more" onclick="openDayList('${dateKey}')">+${overflowCount} คนอื่นๆ</div>` : ""}
+        </div>`;
+    }
+
+    document.getElementById("calBox").innerHTML = `<div class="cal-grid">${html}</div>`;
+    // เก็บข้อมูลกลุ่มตามวันไว้ใช้ตอนเปิด "ดูทั้งหมด" ของวันที่มีเรื่องเกิน 3 รายการ
+    window._calByDay = byDay;
+  }
+
+  // ชิปในปฏิทินแทนช่างหนึ่งคน — ถ้าวันนั้นช่างคนนี้มีเรื่องเดียวให้เปิดป๊อปอัพเรื่องนั้นตรงๆ แต่ถ้ามีหลายเรื่อง
+  // ให้เปิดหน้าต่างรายการของวันนั้น (กรองเฉพาะเรื่องของช่างคนนี้) ให้เลือกเรื่องที่ต้องการดูก่อน
+  function openDayGroupOrCase(dateKey, surveyorKey) {
+    const dayNum = parseInt(dateKey.slice(8, 10), 10);
+    const groupCases = (window._calByDay[dayNum] || []).filter((c) => surveyorKeyOf(c) === surveyorKey);
+    if (groupCases.length === 1) {
+      openCasePopup(groupCases[0].id);
+    } else {
+      openDayList(dateKey, surveyorKey);
+    }
+  }
+
+  function openDayList(dateKey, filterSurveyorKey) {
+    const dayNum = parseInt(dateKey.slice(8, 10), 10);
+    let dayCases = window._calByDay[dayNum] || [];
+    if (filterSurveyorKey) {
+      dayCases = dayCases.filter((c) => surveyorKeyOf(c) === filterSurveyorKey);
+    }
+    const groups = groupBySurveyor(dayCases);
+
+    document.getElementById("dl_date").textContent =
+      fmtDateOnly(dateKey) + (filterSurveyorKey && groups[0] ? " — " + groups[0].fullLabel : "");
+    document.getElementById("dl_list").innerHTML = groups
+      .map(
+        (g) => `
+      <div style="margin:10px 0 4px; padding-top:8px; border-top:1px solid #F0F3F7; font-weight:700; font-size:13px; color:var(--primary);">
+        ${g.fullLabel} <span class="badge">${g.cases.length} เรื่อง</span>
+      </div>
+      ${g.cases
+        .sort((a, b) => a.case_code.localeCompare(b.case_code))
+        .map(
+          (c) => `
+        <div class="to-case" style="padding:6px 0 6px 4px; cursor:pointer;" onclick="closeDayListModal(); openCasePopup('${c.id}');">
+          ${statusBadge(c.status)} <strong>${c.case_code}</strong> — ${c.requester_name}
+        </div>`
+        )
+        .join("")}`
+      )
+      .join("");
+    document.getElementById("dayListModal").style.display = "flex";
+  }
+
+  function closeDayListModal() {
+    document.getElementById("dayListModal").style.display = "none";
+  }
+
+  function openCasePopup(caseId) {
+    const c = caseStore[caseId];
+    if (!c) return;
+    document.getElementById("cp_code").textContent = c.case_code;
+    document.getElementById("cp_requester").textContent = c.requester_name;
+    document.getElementById("cp_type").textContent = typeMap[c.survey_type_id] || "-";
+    document.getElementById("cp_surveyor").textContent = surveyorFullLabel(c);
+    document.getElementById("cp_appointment").textContent = fmtDateOnly(c.appointment_date);
+    document.getElementById("cp_status").innerHTML = statusBadge(c.status);
+    document.getElementById("cp_viewBtn").onclick = () => (window.location.href = "/case.html?id=" + c.id);
+    document.getElementById("casePopup").style.display = "flex";
+  }
+
+  function closeCasePopup() {
+    document.getElementById("casePopup").style.display = "none";
+  }
+
+  init();
+</script>
+</body>
+</html>
