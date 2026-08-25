@@ -22,10 +22,16 @@
     <!-- ฟอร์มค้นหา -->
     <div class="track-card" id="searchCard">
       <h2 style="margin-top:0;">ตรวจสอบสถานะคำขอรังวัด</h2>
-      <p class="subtitle" style="margin-bottom:18px;">กรอกเลขที่คำขอ (รว.19) และเบอร์โทรศัพท์ผู้ขอ 4 ตัวท้าย ที่ให้ไว้ตอนยื่นคำขอ</p>
+      <p class="subtitle" style="margin-bottom:18px;">เลือกสำนักงานที่ยื่นคำขอ แล้วกรอกเลขที่คำขอ (รว.12) และเบอร์โทรศัพท์ผู้ขอ 4 ตัวท้าย ที่ให้ไว้ตอนยื่นคำขอ</p>
       <form id="trackForm">
         <div class="form-row">
-          <label>เลขที่คำขอ (รว.19)</label>
+          <label>สำนักงานที่ยื่นคำขอ</label>
+          <select id="officeId" required>
+            <option value="">— กำลังโหลดรายชื่อสำนักงาน... —</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>เลขที่คำขอ (รว.12)</label>
           <input type="text" id="caseCode" placeholder="เช่น 123/2569" required autocomplete="off" autocapitalize="characters">
         </div>
         <div class="form-row">
@@ -36,8 +42,8 @@
         <div id="errorBox" class="error-text" style="display:none;"></div>
       </form>
       <div class="hint-box">
-        <b>หาเลขที่คำขอ (รว.19) ไม่เจอ?</b><br>
-        เลขที่คำขอจะอยู่บนใบรับเรื่องที่เจ้าหน้าที่มอบให้ตอนยื่นคำขอรังวัด หรือสอบถามได้ที่สำนักงานที่ดินที่ยื่นเรื่องไว้
+        <b>หาสำนักงาน หรือเลขที่คำขอ (รว.12) ไม่เจอ?</b><br>
+        สำนักงานและเลขที่คำขอจะอยู่บนใบรับเรื่องที่เจ้าหน้าที่มอบให้ตอนยื่นคำขอรังวัด หรือสอบถามได้ที่สำนักงานที่ดินที่ยื่นเรื่องไว้
       </div>
     </div>
 
@@ -119,18 +125,46 @@ function statusBadgeClass(status, isCancelled) {
   return "badge status-" + status;
 }
 
+async function loadOffices() {
+  const sel = document.getElementById("officeId");
+  try {
+    const res = await fetch("/api/v1/public/offices");
+    const data = await res.json();
+    if (!res.ok) throw new Error();
+    const offices = data.data || data || [];
+    if (!offices.length) {
+      sel.innerHTML = `<option value="">— ไม่พบสำนักงานในระบบ —</option>`;
+      return;
+    }
+    sel.innerHTML =
+      `<option value="">— เลือกสำนักงาน —</option>` +
+      offices.map((o) => `<option value="${o.id}">${o.name} (${o.province})</option>`).join("");
+  } catch (e) {
+    sel.innerHTML = `<option value="">— โหลดรายชื่อสำนักงานไม่สำเร็จ ลองรีเฟรชหน้าใหม่ —</option>`;
+  }
+}
+loadOffices();
+
 document.getElementById("trackForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const officeId = document.getElementById("officeId").value;
   const caseCode = document.getElementById("caseCode").value.trim();
   const phoneLast4 = document.getElementById("phoneLast4").value.trim();
   const errorBox = document.getElementById("errorBox");
   const searchBtn = document.getElementById("searchBtn");
   errorBox.style.display = "none";
+
+  if (!officeId) {
+    errorBox.textContent = "กรุณาเลือกสำนักงานที่ยื่นคำขอ";
+    errorBox.style.display = "block";
+    return;
+  }
+
   searchBtn.disabled = true;
   searchBtn.textContent = "กำลังตรวจสอบ...";
 
   try {
-    const params = new URLSearchParams({ case_code: caseCode, phone_last4: phoneLast4 });
+    const params = new URLSearchParams({ office_id: officeId, case_code: caseCode, phone_last4: phoneLast4 });
     const res = await fetch("/api/v1/public/track?" + params.toString());
     const data = await res.json();
     if (!res.ok) throw new Error((data.error && data.error.message) || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");

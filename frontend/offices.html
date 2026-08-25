@@ -38,7 +38,7 @@
     <h3 id="officeModalTitle">เพิ่มสำนักงาน</h3>
     <form id="officeForm">
       <div class="form-row" id="o_code_row">
-        <label>รหัสสำนักงาน (ใช้ขึ้นต้นเลข รว.19 ของสำนักงานนี้ เช่น LB01 — <strong>ตั้งครั้งเดียว แก้ไขทีหลังไม่ได้</strong>)</label>
+        <label>รหัสสำนักงาน (ใช้ขึ้นต้นเลข รว.12 ของสำนักงานนี้ เช่น LB01 — <strong>ตั้งครั้งเดียว แก้ไขทีหลังไม่ได้</strong>)</label>
         <input type="text" id="o_code" autocomplete="off" style="text-transform:uppercase;">
       </div>
       <div class="form-row"><label>ชื่อสำนักงาน</label><input type="text" id="o_name" required></div>
@@ -120,7 +120,7 @@
     document.getElementById("officeModalTitle").textContent = "แก้ไขข้อมูลสำนักงาน";
     document.getElementById("o_code_row").style.display = "block";
     document.getElementById("o_code").value = o.code;
-    document.getElementById("o_code").disabled = true; // แก้รหัสสำนักงานทีหลังไม่ได้ — ถูกฝังอยู่ในเลข รว.19 ที่ออกไปแล้ว
+    document.getElementById("o_code").disabled = true; // แก้รหัสสำนักงานทีหลังไม่ได้ — ถูกฝังอยู่ในเลข รว.12 ที่ออกไปแล้ว
     document.getElementById("o_name").value = o.name || "";
     document.getElementById("o_province").value = o.province || "";
     document.getElementById("o_district").value = o.district || "";

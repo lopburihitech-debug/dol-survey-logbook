@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS survey_types (
 
 CREATE TABLE IF NOT EXISTS survey_cases (
     id TEXT PRIMARY KEY,
-    case_code TEXT UNIQUE NOT NULL,           -- เลข รว.19
+    case_code TEXT NOT NULL,                  -- เลข รว.12 (unique เฉพาะภายในสำนักงานเดียวกัน — ดู idx_survey_cases_office_code
+                                               -- ด้านล่าง เพราะแต่ละสำนักงานออกเลขของตัวเองแยกกัน อาจซ้ำกันข้ามสำนักงานได้)
     office_id TEXT NOT NULL REFERENCES offices(id),
     survey_type_id TEXT NOT NULL REFERENCES survey_types(id),
     requester_name TEXT NOT NULL,
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS survey_cases (
 );
 CREATE INDEX IF NOT EXISTS idx_survey_cases_status ON survey_cases(status);
 CREATE INDEX IF NOT EXISTS idx_survey_cases_office ON survey_cases(office_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_cases_office_code ON survey_cases(office_id, case_code);
 
 CREATE TABLE IF NOT EXISTS parcels (
     id TEXT PRIMARY KEY,

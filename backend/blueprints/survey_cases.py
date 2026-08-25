@@ -28,7 +28,7 @@ from services.thai_date import parse_flexible_date
 bp = Blueprint("survey_cases", __name__, url_prefix="/api/v1/survey-cases")
 
 # หัวคอลัมน์ที่จำเป็นต้องมีในไฟล์ CSV นำเข้างานค้าง (ดู IMPORT_STATUS_LABELS ด้านล่างสำหรับคอลัมน์ "สถานะเริ่มต้น")
-IMPORT_REQUIRED_HEADERS = ["รว.19", "ชื่อผู้ขอรังวัด", "ประเภท"]
+IMPORT_REQUIRED_HEADERS = ["รว.12", "ชื่อผู้ขอรังวัด", "ประเภท"]
 
 # ป้ายภาษาไทยที่ยอมรับในคอลัมน์ "สถานะเริ่มต้น" (ไม่ระบุ/เว้นว่างได้ — ระบบจะเลือกให้อัตโนมัติจากข้อมูลแถวนั้น)
 IMPORT_STATUS_LABELS = {
@@ -153,11 +153,16 @@ def create_case():
         except ValueError:
             return err("received_date ต้องเป็นรูปแบบ ISO-8601 เช่น 2026-08-20 หรือ 2026-08-20T09:00:00")
 
-        # เลข รว.19 — กรอกเองได้ตามเลขจริงจากแบบฟอร์มกระดาษ ถ้าไม่ระบุจะสร้างให้อัตโนมัติ (สำรองไว้สำหรับผู้เรียก API อื่น)
+        # เลข รว.12 — กรอกเองได้ตามเลขจริงจากแบบฟอร์มกระดาษ ถ้าไม่ระบุจะสร้างให้อัตโนมัติ (สำรองไว้สำหรับผู้เรียก API อื่น)
+        # unique เฉพาะภายในสำนักงานเดียวกัน (ผูกกับ office_id) เพราะแต่ละสำนักงานออกเลขของตัวเองแยกกัน อาจซ้ำกัน
+        # ข้ามสำนักงานได้ตามจริง
         case_code = (payload.get("case_code") or "").strip()
         if case_code:
-            if conn.execute("SELECT 1 FROM survey_cases WHERE case_code = ?", (case_code,)).fetchone():
-                return err(f"เลข รว.19 '{case_code}' มีอยู่ในระบบแล้ว กรุณาตรวจสอบ", 409)
+            if conn.execute(
+                "SELECT 1 FROM survey_cases WHERE case_code = ? AND office_id = ?",
+                (case_code, payload["office_id"]),
+            ).fetchone():
+                return err(f"เลข รว.12 '{case_code}' มีอยู่ในระบบแล้วสำหรับสำนักงานนี้ กรุณาตรวจสอบ", 409)
         else:
             case_code = generate_case_code(conn, payload["office_id"])
 
@@ -301,15 +306,18 @@ def import_cases():
             def cell(header):
                 return (row.get(header) or "").strip()
 
-            case_code = cell("รว.19")
+            case_code = cell("รว.12")
             if not case_code:
-                skipped.append({"row": line_no, "reason": "ไม่มีเลข รว.19"})
+                skipped.append({"row": line_no, "reason": "ไม่มีเลข รว.12"})
                 continue
             if case_code in seen_codes:
-                skipped.append({"row": line_no, "case_code": case_code, "reason": "เลข รว.19 นี้ซ้ำกันในไฟล์เดียวกัน"})
+                skipped.append({"row": line_no, "case_code": case_code, "reason": "เลข รว.12 นี้ซ้ำกันในไฟล์เดียวกัน"})
                 continue
-            if conn.execute("SELECT 1 FROM survey_cases WHERE case_code = ?", (case_code,)).fetchone():
-                skipped.append({"row": line_no, "case_code": case_code, "reason": "เลข รว.19 นี้มีอยู่ในระบบแล้ว"})
+            # unique เฉพาะภายในสำนักงานเดียวกัน — office_id ของทั้งไฟล์นี้ถูกเลือกไว้แล้วครั้งเดียวตอนนำเข้า
+            if conn.execute(
+                "SELECT 1 FROM survey_cases WHERE case_code = ? AND office_id = ?", (case_code, office_id)
+            ).fetchone():
+                skipped.append({"row": line_no, "case_code": case_code, "reason": "เลข รว.12 นี้มีอยู่ในระบบแล้วสำหรับสำนักงานนี้"})
                 continue
 
             requester_name = cell("ชื่อผู้ขอรังวัด")
@@ -479,17 +487,6 @@ def update_case(case_id):
         if not is_office_in_user_scope(conn, g.current_user, existing_case["office_id"]):
             return err("เรื่องนี้อยู่นอกเขตจังหวัดที่ท่านดูแล", 403)
 
-        if "case_code" in fields:
-            new_code = (fields["case_code"] or "").strip()
-            if not new_code:
-                return err("เลข รว.19 ห้ามเว้นว่าง")
-            dup = conn.execute(
-                "SELECT 1 FROM survey_cases WHERE case_code = ? AND id != ?", (new_code, case_id)
-            ).fetchone()
-            if dup:
-                return err(f"เลข รว.19 '{new_code}' ถูกใช้กับเรื่องอื่นอยู่แล้ว")
-            fields["case_code"] = new_code
-
         if "office_id" in fields:
             office = conn.execute("SELECT id FROM offices WHERE id = ?", (fields["office_id"],)).fetchone()
             if office is None:
@@ -498,6 +495,21 @@ def update_case(case_id):
             # นอกจังหวัดตัวเอง (system_admin/administrator ไม่มีขอบเขตอยู่แล้ว ผ่านเงื่อนไขนี้เสมอ)
             if not is_office_in_user_scope(conn, g.current_user, fields["office_id"]):
                 return err("ไม่มีสิทธิ์ย้ายเรื่องไปยังสำนักงานนอกเขตที่ท่านดูแล", 403)
+
+        if "case_code" in fields:
+            new_code = (fields["case_code"] or "").strip()
+            if not new_code:
+                return err("เลข รว.12 ห้ามเว้นว่าง")
+            # unique เฉพาะภายในสำนักงานเดียวกัน — ใช้สำนักงานใหม่ถ้ากำลังย้ายสำนักงานในคำขอเดียวกันนี้ด้วย
+            # ไม่งั้นใช้สำนักงานเดิมของเรื่อง
+            target_office_id = fields.get("office_id", existing_case["office_id"])
+            dup = conn.execute(
+                "SELECT 1 FROM survey_cases WHERE case_code = ? AND office_id = ? AND id != ?",
+                (new_code, target_office_id, case_id),
+            ).fetchone()
+            if dup:
+                return err(f"เลข รว.12 '{new_code}' ถูกใช้กับเรื่องอื่นอยู่แล้วในสำนักงานนี้")
+            fields["case_code"] = new_code
 
         if "survey_type_id" in fields:
             st = conn.execute("SELECT id FROM survey_types WHERE id = ?", (fields["survey_type_id"],)).fetchone()
@@ -509,7 +521,7 @@ def update_case(case_id):
         try:
             conn.execute(f"UPDATE survey_cases SET {set_clause}, updated_at = ? WHERE id = ?", list(fields.values()) + [now_iso(), case_id])
         except sqlite3.IntegrityError:
-            return err("บันทึกไม่สำเร็จ — ข้อมูลที่กรอกซ้ำกับเรื่องอื่น (เช่น เลข รว.19)")
+            return err("บันทึกไม่สำเร็จ — ข้อมูลที่กรอกซ้ำกับเรื่องอื่น (เช่น เลข รว.12)")
         log_action(conn, g.current_user["id"], "UPDATE", "survey_cases", case_id, before=before_snapshot, after=fields)
         conn.commit()
         row = conn.execute("SELECT * FROM survey_cases WHERE id = ?", (case_id,)).fetchone()
@@ -522,7 +534,7 @@ def update_case(case_id):
 @login_required
 @require_roles(Role.SYSTEM_ADMIN, Role.PROVINCE_ADMIN)
 def delete_case(case_id):
-    """ลบเรื่อง (รว.19) แบบถาวร — ลบข้อมูลที่เกี่ยวข้องทั้งหมด (มอบหมาย/นัดหมาย/รูปภาพ-หมุด/ประวัติสถานะ/ตรวจสอบ/
+    """ลบเรื่อง (รว.12) แบบถาวร — ลบข้อมูลที่เกี่ยวข้องทั้งหมด (มอบหมาย/นัดหมาย/รูปภาพ-หมุด/ประวัติสถานะ/ตรวจสอบ/
     แก้ไขซ้ำ/ร้องเรียน/ค่าธรรมเนียม/แจ้งเตือน/เบิกอุปกรณ์) รวมถึงไฟล์ที่อัปโหลดไว้บนดิสก์ ทำคืนไม่ได้ — เก็บ snapshot
     ก่อนลบไว้ใน audit_logs (before_data) เพื่อการตรวจสอบย้อนหลังเท่านั้น ไม่ใช่การกู้คืนอัตโนมัติ"""
     conn = get_connection()

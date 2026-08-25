@@ -156,7 +156,7 @@ def _build_polygon_shape(ring_points):
 
 def build_marker_shapefile_zip(markers, prefix):
     """markers: list of dict {sequence_no, label, lat, lng} เรียงตามลำดับหมุดแล้ว
-    prefix: ชื่อไฟล์นำหน้า (ASCII เท่านั้น เช่น เลข รว.19 ที่ตัดอักขระพิเศษออกแล้ว)
+    prefix: ชื่อไฟล์นำหน้า (ASCII เท่านั้น เช่น เลข รว.12 ที่ตัดอักขระพิเศษออกแล้ว)
     คืนค่า bytes ของไฟล์ .zip ที่รวม:
       - <prefix>_points.(shp|shx|dbf|prj|cpg) — จุดหมุดทุกจุด
       - <prefix>_boundary.(shp|shx|dbf|prj|cpg) — รูปปิดขอบเขต (สร้างเฉพาะเมื่อมีหมุด >= 3 จุด)

@@ -12,7 +12,7 @@ from services.case_code import generate_case_code
 from services.sla import add_business_days
 
 # รายชื่อประเภทงานรังวัดตามที่ใช้จริงของกรมที่ดิน — ใส่ไว้ครบตามที่ใช้งานจริง
-# (เพิ่มเติมได้ทีหลังผ่านหน้า "รับเรื่อง รว.19 ใหม่" -> ช่องประเภทงาน -> พิมพ์ชื่อใหม่ที่ไม่มีในรายการ)
+# (เพิ่มเติมได้ทีหลังผ่านหน้า "รับเรื่อง รว.12 ใหม่" -> ช่องประเภทงาน -> พิมพ์ชื่อใหม่ที่ไม่มีในรายการ)
 SURVEY_TYPE_MASTER_LIST = [
     "กันเขตส่วนที่เพิกถอนตามคำพิพากษา",
     "ขอคัดถ่ายระวาง",
@@ -213,7 +213,7 @@ def run():
             (new_id(), user_ids["surveyor2"], office_id, ts, ts),
         )
 
-        # --- ตัวอย่างเรื่อง รว.19 ---
+        # --- ตัวอย่างเรื่อง รว.12 ---
         received = datetime.now() - timedelta(days=10)
         due = add_business_days(conn, received, 30)
         case_code = generate_case_code(conn, office_id)

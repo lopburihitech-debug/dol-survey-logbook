@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>รายงาน — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  /* สไตล์เฉพาะหน้านี้เท่านั้น — ไม่แตะ css/style.css กลาง เพื่อไม่ให้กระทบหน้าอื่น */
+  .report-meta { font-size: 12.5px; color: var(--text-muted); line-height: 1.7; }
+  .scope-label { font-weight: 700; color: var(--primary); font-size: 13.5px; margin-top: 2px; }
+  .signature-row { display: flex; justify-content: space-between; gap: 24px; margin-top: 40px; flex-wrap: wrap; }
+  .signature-block { flex: 1 1 240px; text-align: center; font-size: 13.5px; color: var(--text); }
+  .signature-line { margin-top: 64px; border-top: 1px solid #94a3b8; padding-top: 6px; }
+  .signature-date { margin-top: 6px; color: var(--text-muted); font-size: 12.5px; }
+
+  @media print {
+    .no-print, .topbar, .nav-toggle { display: none !important; }
+    body { background: #fff; }
+    .container { max-width: 100%; padding: 0; margin: 0; }
+    .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+    table { font-size: 10.5px; }
+    th, td { padding: 5px 6px; }
+    table thead { display: table-header-group; }
+    table tr { break-inside: avoid; }
+    .table-scroll { overflow: visible; }
+    a { color: inherit; text-decoration: none; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { size: A4; margin: 14mm 12mm; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container">
+  <div class="no-print" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+    <div>
+      <h1>รายงาน</h1>
+      <div class="subtitle">สรุปและพิมพ์รายงานงานรังวัด ตามขอบเขตสิทธิ์การเข้าถึงของท่าน</div>
+    </div>
+    <button class="btn btn-primary" onclick="window.print()">🖨️ พิมพ์รายงาน</button>
+  </div>
+
+  <div class="card no-print">
+    <div class="filters">
+      <select id="officeFilter" style="display:none;"><option value="">ทุกสำนักงาน</option></select>
+      <select id="typeFilter"><option value="">ทุกประเภทงาน</option></select>
+      <select id="statusFilter"><option value="">ทุกสถานะ</option></select>
+      <input type="date" id="dateFrom" title="วันรับเรื่องตั้งแต่วันที่">
+      <input type="date" id="dateTo" title="วันรับเรื่องถึงวันที่">
+      <button class="btn btn-outline btn-sm" onclick="renderReport()">กรอง</button>
+      <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้างตัวกรอง</button>
+    </div>
+  </div>
+
+  <div id="printArea">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h1 style="margin-bottom:2px;">รายงานสรุปงานรังวัดที่ดิน</h1>
+          <div class="scope-label" id="scopeLabel">กำลังโหลด...</div>
+        </div>
+        <div class="report-meta" style="text-align:right;">
+          <div>ออกรายงานโดย: <b id="genBy">-</b></div>
+          <div>วันที่ออกรายงาน: <b id="genAt">-</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="card" id="officeBreakdownCard" style="display:none;">
+      <h2>สรุปแยกตามสำนักงาน</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>สำนักงาน</th><th>จังหวัด</th><th>ทั้งหมด</th><th>ค้าง</th><th>เกินกำหนด</th><th>เสร็จสิ้น</th></tr></thead>
+          <tbody id="officeBreakdownBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>รายการเรื่องรังวัด (<span id="caseCount">0</span> เรื่อง)</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="caseTableHead"></tr></thead>
+          <tbody id="caseTableBody"><tr><td class="loading">กำลังโหลด...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="signature-row">
+      <div class="signature-block">
+        <div class="signature-line">ผู้จัดทำรายงาน</div>
+        <div class="signature-date">วันที่ ........./........./..........</div>
+      </div>
+      <div class="signature-block">
+        <div class="signature-line">ผู้ตรวจสอบ / รับรอง</div>
+        <div class="signature-date">วันที่ ........./........./..........</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+
+  let ALL_CASES = [];
+  let TYPE_MAP = {};
+  let OFFICE_MAP = {};
+  let SCOPE_OFFICES = [];
+  let CURRENT_USER = null;
+
+  async function init() {
+    CURRENT_USER = await renderTopbar("report");
+    if (!CURRENT_USER) return;
+
+    const [cases, types, offices, scopeOffices] = await Promise.all([
+      apiFetch("/survey-cases"),
+      apiFetch("/survey-types"),
+      apiFetch("/offices"),
+      apiFetch("/dashboard/by-office"),
+    ]);
+
+    ALL_CASES = cases || [];
+    (types || []).forEach((t) => (TYPE_MAP[t.id] = t.name));
+    (offices || []).forEach((o) => (OFFICE_MAP[o.id] = o));
+    SCOPE_OFFICES = scopeOffices || [];
+
+    populateFilterOptions(types);
+    setupScopeUI();
+    renderReport();
+
+    document.getElementById("genBy").textContent =
+      `${CURRENT_USER.full_name} (${ROLE_LABELS[CURRENT_USER.role] || CURRENT_USER.role})`;
+    document.getElementById("genAt").textContent = fmtDate(new Date().toISOString());
+  }
+
+  function populateFilterOptions(types) {
+    const typeSel = document.getElementById("typeFilter");
+    (types || []).forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.name;
+      typeSel.appendChild(opt);
+    });
+    const statusSel = document.getElementById("statusFilter");
+    Object.keys(STATUS_LABELS).forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = STATUS_LABELS[s];
+      statusSel.appendChild(opt);
+    });
+  }
+
+  function setupScopeUI() {
+    let scopeText = "";
+    if (["system_admin", "administrator"].includes(CURRENT_USER.role)) {
+      scopeText = "ระดับ: ภาพรวมทั้งระบบ (ทุกจังหวัด ทุกสำนักงาน)";
+    } else if (CURRENT_USER.role === "province_admin") {
+      const province = SCOPE_OFFICES[0] ? SCOPE_OFFICES[0].province : "ตามสิทธิ์ของท่าน";
+      scopeText = `ระดับ: จังหวัด${province}`;
+    } else if (["supervisor", "branch_admin"].includes(CURRENT_USER.role)) {
+      const off = SCOPE_OFFICES[0];
+      scopeText = off ? `ระดับ: สำนักงาน ${off.office_name} (จังหวัด${off.province})` : "ระดับ: สำนักงานของท่าน";
+    } else if (CURRENT_USER.role === "surveyor") {
+      scopeText = `ระดับ: รายบุคคล (ช่างรังวัด ${CURRENT_USER.full_name})`;
+    }
+    document.getElementById("scopeLabel").textContent = scopeText;
+
+    // แสดงตัวกรอง/คอลัมน์สำนักงาน เฉพาะเมื่อขอบเขตที่มองเห็นมีมากกว่า 1 สำนักงาน (ผู้ดูแลระบบ/ผู้บริหาร/
+    // ผู้ดูแลจังหวัดที่มีหลายสาขา) — หัวหน้าช่าง/เจ้าพนักงานสาขา/ช่างรังวัดเห็นแค่ของตัวเอง ไม่มีอะไรให้กรอง
+    if (SCOPE_OFFICES.length > 1) {
+      const sel = document.getElementById("officeFilter");
+      sel.style.display = "";
+      SCOPE_OFFICES.forEach((o) => {
+        const opt = document.createElement("option");
+        opt.value = o.office_id;
+        opt.textContent = `${o.office_name} (${o.province})`;
+        sel.appendChild(opt);
+      });
+    }
+  }
+
+  function getFilteredCases() {
+    const officeId = document.getElementById("officeFilter").value;
+    const typeId = document.getElementById("typeFilter").value;
+    const status = document.getElementById("statusFilter").value;
+    const from = document.getElementById("dateFrom").value;
+    const to = document.getElementById("dateTo").value;
+
+    return ALL_CASES.filter((c) => {
+      if (officeId && c.office_id !== officeId) return false;
+      if (typeId && c.survey_type_id !== typeId) return false;
+      if (status && c.status !== status) return false;
+      if (from && c.received_date < from) return false;
+      if (to && c.received_date > to + "T23:59:59") return false;
+      return true;
+    });
+  }
+
+  function clearFilters() {
+    document.getElementById("officeFilter").value = "";
+    document.getElementById("typeFilter").value = "";
+    document.getElementById("statusFilter").value = "";
+    document.getElementById("dateFrom").value = "";
+    document.getElementById("dateTo").value = "";
+    renderReport();
+  }
+
+  function renderReport() {
+    const filtered = getFilteredCases();
+    renderKpis(filtered);
+    renderOfficeBreakdown(filtered);
+    renderCaseTable(filtered);
+  }
+
+  function renderKpis(cases) {
+    const total = cases.length;
+    const pending = cases.filter((c) => !NAV_CLOSED_SET.has(c.status)).length;
+    const nowIso = new Date().toISOString();
+    const overdue = cases.filter((c) => c.due_date && c.due_date < nowIso && !NAV_CLOSED_SET.has(c.status)).length;
+    const closed = total - pending;
+    document.getElementById("kpiGrid").innerHTML = `
+      <div class="kpi-card"><div class="value">${total}</div><div class="label">เรื่องทั้งหมด</div></div>
+      <div class="kpi-card warn"><div class="value">${pending}</div><div class="label">ค้าง (ยังไม่ปิด)</div></div>
+      <div class="kpi-card danger"><div class="value">${overdue}</div><div class="label">เกินกำหนด</div></div>
+      <div class="kpi-card"><div class="value">${closed}</div><div class="label">เสร็จสิ้น/ถอนจ่ายแล้ว</div></div>
+    `;
+  }
+
+  function renderOfficeBreakdown(cases) {
+    const card = document.getElementById("officeBreakdownCard");
+    if (SCOPE_OFFICES.length <= 1) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "";
+    const nowIso = new Date().toISOString();
+    const rows = SCOPE_OFFICES.map((o) => {
+      const officeCases = cases.filter((c) => c.office_id === o.office_id);
+      const total = officeCases.length;
+      const pending = officeCases.filter((c) => !NAV_CLOSED_SET.has(c.status)).length;
+      const overdue = officeCases.filter(
+        (c) => c.due_date && c.due_date < nowIso && !NAV_CLOSED_SET.has(c.status)
+      ).length;
+      return { name: o.office_name, province: o.province, total, pending, overdue, closed: total - pending };
+    });
+    document.getElementById("officeBreakdownBody").innerHTML =
+      rows
+        .map(
+          (r) =>
+            `<tr><td>${r.name}</td><td>${r.province}</td><td>${r.total}</td><td>${r.pending}</td><td>${r.overdue}</td><td>${r.closed}</td></tr>`
+        )
+        .join("") || `<tr><td colspan="6" class="empty-state">ไม่มีข้อมูล</td></tr>`;
+  }
+
+  function renderCaseTable(cases) {
+    const showOfficeCol = SCOPE_OFFICES.length > 1;
+    const head = document.getElementById("caseTableHead");
+    head.innerHTML = `
+      <th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th>${showOfficeCol ? "<th>สำนักงาน</th>" : ""}
+      <th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>สถานะ</th>
+    `;
+    const sorted = [...cases].sort((a, b) => (b.received_date || "").localeCompare(a.received_date || ""));
+    document.getElementById("caseCount").textContent = sorted.length;
+    document.getElementById("caseTableBody").innerHTML = sorted.length
+      ? sorted
+          .map(
+            (c) => `
+        <tr>
+          <td>${c.case_code}</td>
+          <td>${c.requester_name}</td>
+          <td>${TYPE_MAP[c.survey_type_id] || "-"}</td>
+          ${showOfficeCol ? `<td>${(OFFICE_MAP[c.office_id] || {}).name || "-"}</td>` : ""}
+          <td>${c.assigned_surveyor ? c.assigned_surveyor.full_name : "-"}</td>
+          <td>${fmtDateOnly(c.received_date)}</td>
+          <td>${fmtDateOnly(c.appointment_date)}</td>
+          <td>${statusBadge(c.status)}</td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="${showOfficeCol ? 8 : 7}" class="empty-state">ไม่พบเรื่องตามตัวกรองที่เลือก</td></tr>`;
+  }
+
+  init();
+</script>
+</body>
+</html>

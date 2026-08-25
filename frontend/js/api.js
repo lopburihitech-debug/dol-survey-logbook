@@ -200,6 +200,7 @@ const NAV_ICONS = {
   system: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>`,
   account: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7"/></svg>`,
   summary: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-4M12 16V8M17 16v-7"/></svg>`,
+  report: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>`,
   chevron: `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`,
 };
@@ -260,6 +261,9 @@ async function renderTopbar(activePage) {
     primary.push({ href: "/cases.html", label: "งานรังวัด", key: "cases", icon: NAV_ICONS.cases });
   }
   primary.push({ href: "/calendar.html", label: "ปฏิทินนัดรังวัด", key: "calendar", icon: NAV_ICONS.calendar });
+  // "รายงาน" — พิมพ์รายงานสรุปงานรังวัดตามขอบเขตสิทธิ์ของผู้ใช้แต่ละคน (ทุกบทบาทที่ล็อกอินผ่านเมนูนี้เห็นได้
+  // เนื้อหาในหน้าจะถูกจำกัดขอบเขตอัตโนมัติผ่าน scope_case_filter()/dashboard/by-office ฝั่ง backend อยู่แล้ว)
+  primary.push({ href: "/report.html", label: "รายงาน", key: "report", icon: NAV_ICONS.report });
   if (["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(user.role)) {
     primary.push({ href: "/surveyors.html", label: "ช่างรังวัด", key: "surveyors", icon: NAV_ICONS.people });
   }
