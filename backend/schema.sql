@@ -43,6 +43,30 @@ CREATE TABLE IF NOT EXISTS mfa_backup_codes (
     created_at TEXT NOT NULL
 );
 
+-- อุปกรณ์ (ลายนิ้วมือ/ใบหน้า/PIN เครื่อง) ที่ลงทะเบียนไว้สำหรับล็อกอินแบบ WebAuthn — เก็บเฉพาะกุญแจสาธารณะ
+-- (public key) ไม่ใช่ข้อมูลไบโอเมตริกซ์ใดๆ ทั้งสิ้น (ดู services/webauthn.py หัวไฟล์สำหรับรายละเอียด)
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    credential_id TEXT UNIQUE NOT NULL,     -- base64url ของ credential ID ที่อุปกรณ์สร้างให้ตอนลงทะเบียน
+    public_key_json TEXT NOT NULL,          -- JSON ของกุญแจสาธารณะ {"kty":"EC2"/"RSA", ...} สำหรับตรวจลายเซ็นภายหลัง
+    sign_count INTEGER NOT NULL DEFAULT 0,  -- ตัวนับป้องกันการคัดลอกอุปกรณ์ (replay) ต้องเพิ่มขึ้นทุกครั้งที่ใช้
+    device_label TEXT,                      -- ชื่อที่ผู้ใช้ตั้งเอง เช่น "โน้ตบุ๊คที่ทำงาน" (ไว้แยกเวลามีหลายเครื่อง)
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
+
+-- challenge ชั่วคราวระหว่างขั้นตอน "ขอ options" กับ "ส่งผลลัพธ์กลับมาตรวจ" ของ WebAuthn — ต้องเก็บใน DB ไม่ใช่
+-- ตัวแปรในหน่วยความจำ เพราะ gunicorn รันหลาย worker process (ดู entrypoint.sh) คำขอสองจังหวะอาจไปตกคนละ worker
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    purpose TEXT NOT NULL,   -- 'register' หรือ 'authenticate'
+    challenge TEXT NOT NULL, -- base64url
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS surveyors (
     id TEXT PRIMARY KEY,
     user_id TEXT UNIQUE NOT NULL REFERENCES users(id),

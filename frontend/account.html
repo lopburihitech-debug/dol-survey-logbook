@@ -38,6 +38,38 @@
   </div>
 
   <div class="card">
+    <h2>PIN สำหรับเข้าสู่ระบบ</h2>
+    <div class="subtitle" style="margin-bottom:14px;">
+      ทางเลือกเสริมนอกเหนือจากรหัสผ่าน — เหมาะกับการเข้าสู่ระบบบนมือถือภาคสนามที่พิมพ์รหัสผ่านยาวๆ ทุกครั้งไม่สะดวก
+      (ยังใช้รหัสผ่านเข้าสู่ระบบได้ตามปกติเสมอ ไม่ได้ถูกแทนที่)
+    </div>
+
+    <div id="pinOffState" style="display:none;">
+      <button class="btn btn-primary" id="startPinSetBtn">ตั้งค่า PIN</button>
+    </div>
+
+    <div id="pinOnState" style="display:none;">
+      <div style="margin-bottom:14px;"><span class="badge status-COMPLETED">ตั้งค่า PIN ไว้แล้ว</span></div>
+      <div class="action-bar">
+        <button class="btn btn-outline" id="startPinChangeBtn">เปลี่ยน PIN</button>
+        <button class="btn btn-outline" id="startPinDisableBtn">ปิดใช้งาน PIN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ลายนิ้วมือ / ใบหน้า (Passkey)</h2>
+    <div class="subtitle" style="margin-bottom:14px;">
+      เข้าสู่ระบบด้วยลายนิ้วมือ ใบหน้า หรือ PIN ของเครื่องคอมพิวเตอร์/มือถือเอง (เช่น Windows Hello, Touch ID) —
+      อุปกรณ์เป็นผู้สแกนและตรวจสอบเองทั้งหมด ข้อมูลไบโอเมตริกซ์จริงไม่เคยถูกส่งมาที่ระบบนี้เลย
+      ต้องลงทะเบียนอุปกรณ์แต่ละเครื่องไว้ที่นี่ก่อนถึงจะใช้เข้าสู่ระบบด้วยวิธีนี้ได้
+    </div>
+    <div id="passkeyList"></div>
+    <button class="btn btn-primary" id="addPasskeyBtn" style="margin-top:12px;">+ เพิ่มอุปกรณ์ใหม่</button>
+    <div id="passkeyError" class="error-text" style="display:none; margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
     <h2>การยืนยันตัวตน 2 ชั้น (2FA)</h2>
 
     <!-- สถานะ: ยังไม่เปิดใช้งาน -->
@@ -87,6 +119,57 @@
   </div>
 </div>
 
+<!-- Modal: ตั้งค่า/เปลี่ยน PIN -->
+<div class="modal-backdrop" id="pinSetModal" style="display:none;">
+  <div class="modal">
+    <h3 id="pinSetModalTitle">ตั้งค่า PIN</h3>
+    <div class="subtitle" style="margin-top:-6px;">กรอกรหัสผ่านปัจจุบันเพื่อยืนยันตัวตนก่อนตั้ง/เปลี่ยน PIN</div>
+    <form id="pinSetForm">
+      <div class="form-row"><label>รหัสผ่านปัจจุบัน</label><input type="password" id="pinSet_currentPassword" autocomplete="current-password"></div>
+      <div class="form-row"><label>PIN ใหม่ (ตัวเลข 6 หลัก)</label><input type="text" id="pinSet_pin" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+      <div class="form-row"><label>ยืนยัน PIN ใหม่</label><input type="text" id="pinSet_pinConfirm" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">บันทึก</button>
+        <button type="button" class="btn btn-outline" id="cancelPinSetBtn">ยกเลิก</button>
+      </div>
+      <div id="pinSetError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: ปิดใช้งาน PIN -->
+<div class="modal-backdrop" id="pinDisableModal" style="display:none;">
+  <div class="modal">
+    <h3>ปิดใช้งาน PIN</h3>
+    <div class="subtitle" style="margin-top:-6px;">กรอกรหัสผ่านปัจจุบันเพื่อยืนยันตัวตนก่อนปิดใช้งาน</div>
+    <form id="pinDisableForm">
+      <div class="form-row"><label>รหัสผ่าน</label><input type="password" id="pinDisablePassword" autocomplete="current-password"></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-danger">ปิดใช้งาน PIN</button>
+        <button type="button" class="btn btn-outline" id="cancelPinDisableBtn">ยกเลิก</button>
+      </div>
+      <div id="pinDisableError" class="error-text" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: ตั้งชื่ออุปกรณ์ก่อนลงทะเบียน passkey ใหม่ -->
+<div class="modal-backdrop" id="passkeyLabelModal" style="display:none;">
+  <div class="modal">
+    <h3>เพิ่มอุปกรณ์ใหม่</h3>
+    <div class="subtitle" style="margin-top:-6px;">
+      ตั้งชื่อเรียกอุปกรณ์นี้ (เช่น "โน้ตบุ๊คที่ทำงาน") แล้วทำตามขั้นตอนที่เบราว์เซอร์แสดงเพื่อสแกนลายนิ้วมือ/ใบหน้า
+    </div>
+    <form id="passkeyLabelForm">
+      <div class="form-row"><label>ชื่ออุปกรณ์</label><input type="text" id="passkeyLabelInput" maxlength="100" placeholder="เช่น โน้ตบุ๊คที่ทำงาน" required></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">ดำเนินการต่อ</button>
+        <button type="button" class="btn btn-outline" id="cancelPasskeyLabelBtn">ยกเลิก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Modal: ยืนยันรหัสผ่านเพื่อปิดใช้งาน 2FA -->
 <div class="modal-backdrop" id="mfaDisableModal" style="display:none;">
   <div class="modal">
@@ -120,6 +203,8 @@
       document.getElementById("info_office").textContent = office ? office.name : "-";
     }
     refreshMfaState();
+    refreshPinState();
+    refreshPasskeyList();
   }
 
   function refreshMfaState() {
@@ -168,6 +253,174 @@
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";
+    }
+  });
+
+  // ---------- PIN สำหรับเข้าสู่ระบบ ----------
+  function refreshPinState() {
+    document.getElementById("pinOffState").style.display = currentUser.pin_enabled ? "none" : "block";
+    document.getElementById("pinOnState").style.display = currentUser.pin_enabled ? "block" : "none";
+  }
+
+  function openPinSetModal(isChange) {
+    document.getElementById("pinSetModalTitle").textContent = isChange ? "เปลี่ยน PIN" : "ตั้งค่า PIN";
+    document.getElementById("pinSet_currentPassword").value = "";
+    document.getElementById("pinSet_pin").value = "";
+    document.getElementById("pinSet_pinConfirm").value = "";
+    document.getElementById("pinSetError").style.display = "none";
+    document.getElementById("pinSetModal").style.display = "flex";
+  }
+  document.getElementById("startPinSetBtn").addEventListener("click", () => openPinSetModal(false));
+  document.getElementById("startPinChangeBtn").addEventListener("click", () => openPinSetModal(true));
+  document.getElementById("cancelPinSetBtn").addEventListener("click", () => {
+    document.getElementById("pinSetModal").style.display = "none";
+  });
+
+  document.getElementById("pinSetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("pinSetError");
+    errorBox.style.display = "none";
+    const current_password = document.getElementById("pinSet_currentPassword").value;
+    const pin = document.getElementById("pinSet_pin").value.trim();
+    const pin_confirm = document.getElementById("pinSet_pinConfirm").value.trim();
+    try {
+      await apiFetch("/auth/pin/set", {
+        method: "POST",
+        body: JSON.stringify({ current_password, pin, pin_confirm }),
+      });
+      currentUser.pin_enabled = true;
+      localStorage.setItem("dol_user", JSON.stringify(currentUser));
+      document.getElementById("pinSetModal").style.display = "none";
+      refreshPinState();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  document.getElementById("startPinDisableBtn").addEventListener("click", () => {
+    document.getElementById("pinDisablePassword").value = "";
+    document.getElementById("pinDisableError").style.display = "none";
+    document.getElementById("pinDisableModal").style.display = "flex";
+  });
+  document.getElementById("cancelPinDisableBtn").addEventListener("click", () => {
+    document.getElementById("pinDisableModal").style.display = "none";
+  });
+  document.getElementById("pinDisableForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("pinDisableError");
+    errorBox.style.display = "none";
+    try {
+      await apiFetch("/auth/pin/disable", {
+        method: "POST",
+        body: JSON.stringify({ current_password: document.getElementById("pinDisablePassword").value }),
+      });
+      currentUser.pin_enabled = false;
+      localStorage.setItem("dol_user", JSON.stringify(currentUser));
+      document.getElementById("pinDisableModal").style.display = "none";
+      refreshPinState();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  // ---------- ลายนิ้วมือ/ใบหน้า (Passkey / WebAuthn) ----------
+  async function refreshPasskeyList() {
+    const listEl = document.getElementById("passkeyList");
+    try {
+      const creds = await apiFetch("/auth/webauthn/credentials");
+      if (!creds || !creds.length) {
+        listEl.innerHTML = '<div class="subtitle">ยังไม่มีอุปกรณ์ที่ลงทะเบียนไว้</div>';
+        return;
+      }
+      listEl.innerHTML = creds
+        .map(
+          (c) => `
+        <div class="info-grid" style="margin-bottom:10px; align-items:center;">
+          <div>
+            <b>${c.device_label || "(ไม่ได้ตั้งชื่อ)"}</b><br>
+            <span class="subtitle">ลงทะเบียนเมื่อ ${fmtDate(c.created_at)}${c.last_used_at ? " · ใช้ล่าสุด " + fmtDate(c.last_used_at) : ""}</span>
+          </div>
+          <div><button type="button" class="btn btn-outline" onclick="removePasskey('${c.id}')">ลบ</button></div>
+        </div>`
+        )
+        .join("");
+    } catch (err) {
+      listEl.innerHTML = '<div class="error-text">โหลดรายการอุปกรณ์ไม่สำเร็จ</div>';
+    }
+  }
+
+  async function removePasskey(id) {
+    if (
+      !confirm(
+        "ยืนยันลบอุปกรณ์นี้ออกจากบัญชี? หากเป็นอุปกรณ์เดียวที่ลงทะเบียนไว้ จะไม่สามารถเข้าสู่ระบบด้วยลายนิ้วมือ/ใบหน้าได้อีก จนกว่าจะเพิ่มใหม่"
+      )
+    )
+      return;
+    try {
+      await apiFetch(`/auth/webauthn/credentials/${id}`, { method: "DELETE" });
+      refreshPasskeyList();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  document.getElementById("addPasskeyBtn").addEventListener("click", () => {
+    document.getElementById("passkeyLabelInput").value = "";
+    document.getElementById("passkeyLabelModal").style.display = "flex";
+  });
+  document.getElementById("cancelPasskeyLabelBtn").addEventListener("click", () => {
+    document.getElementById("passkeyLabelModal").style.display = "none";
+  });
+
+  document.getElementById("passkeyLabelForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const deviceLabel = document.getElementById("passkeyLabelInput").value.trim();
+    document.getElementById("passkeyLabelModal").style.display = "none";
+    const errBox = document.getElementById("passkeyError");
+    errBox.style.display = "none";
+
+    if (!window.PublicKeyCredential) {
+      errBox.textContent = "เบราว์เซอร์หรืออุปกรณ์นี้ไม่รองรับการลงทะเบียนลายนิ้วมือ/ใบหน้า";
+      errBox.style.display = "block";
+      return;
+    }
+
+    try {
+      const opts = await apiFetch("/auth/webauthn/register/options", { method: "POST" });
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: b64urlToBuffer(opts.challenge),
+          rp: opts.rp,
+          user: {
+            id: b64urlToBuffer(opts.user.id),
+            name: opts.user.name,
+            displayName: opts.user.displayName,
+          },
+          pubKeyCredParams: opts.pubKeyCredParams,
+          timeout: opts.timeout,
+          attestation: opts.attestation,
+          authenticatorSelection: opts.authenticatorSelection,
+          excludeCredentials: opts.excludeCredentials.map((c) => ({ type: c.type, id: b64urlToBuffer(c.id) })),
+        },
+      });
+
+      const credentialPayload = {
+        id: bufferToB64url(credential.rawId),
+        response: {
+          clientDataJSON: bufferToB64url(credential.response.clientDataJSON),
+          attestationObject: bufferToB64url(credential.response.attestationObject),
+        },
+      };
+      await apiFetch("/auth/webauthn/register/verify", {
+        method: "POST",
+        body: JSON.stringify({ credential: credentialPayload, device_label: deviceLabel }),
+      });
+      refreshPasskeyList();
+    } catch (err) {
+      errBox.textContent = err.name === "NotAllowedError" ? "ยกเลิกการลงทะเบียน หรือใช้เวลานานเกินไป" : err.message;
+      errBox.style.display = "block";
     }
   });
 

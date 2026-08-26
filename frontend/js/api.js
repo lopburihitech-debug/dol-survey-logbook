@@ -78,6 +78,24 @@ async function apiUpload(path, file, extraFields) {
   return data;
 }
 
+// แปลงข้อมูลไปมาระหว่าง base64url (รูปแบบที่ backend/WebAuthn ใช้ส่งข้อมูลเป็น string) กับ ArrayBuffer
+// (รูปแบบที่ navigator.credentials.create()/.get() ของเบราว์เซอร์ต้องการ) — ใช้ร่วมกันทั้ง login.html
+// (ยืนยันตัวตน) และ account.html (ลงทะเบียนอุปกรณ์ใหม่)
+function b64urlToBuffer(b64url) {
+  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64url.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function bufferToB64url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 async function fetchAuthedBlobUrl(absolutePath) {
   const { access } = getTokens();
   try {

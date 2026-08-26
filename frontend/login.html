@@ -20,13 +20,25 @@
         <label>ชื่อผู้ใช้</label>
         <input type="text" id="username" required autocomplete="username">
       </div>
-      <div class="form-row">
+      <div class="form-row" id="passwordField">
         <label>รหัสผ่าน</label>
-        <input type="password" id="password" required autocomplete="current-password">
+        <input type="password" id="password" autocomplete="current-password">
+      </div>
+      <div class="form-row" id="pinField" style="display:none;">
+        <label>PIN (6 หลัก)</label>
+        <input type="text" id="pin" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="123456">
       </div>
       <button type="submit" class="btn btn-primary">เข้าสู่ระบบ</button>
       <div id="errorBox" class="error-text" style="display:none;"></div>
+      <div style="text-align:center; margin-top:12px;">
+        <a href="#" id="toggleMethodLink" style="color:var(--primary); font-size:14px;">เข้าสู่ระบบด้วย PIN แทน</a>
+      </div>
     </form>
+
+    <button type="button" class="btn btn-outline" id="webauthnLoginBtn" style="width:100%; margin-top:10px;">
+      เข้าสู่ระบบด้วยลายนิ้วมือ/ใบหน้า
+    </button>
+    <div id="webauthnErrorBox" class="error-text" style="display:none; margin-top:8px;"></div>
 
     <form id="mfaForm" style="display:none;">
       <div class="subtitle" style="margin-bottom:14px;">บัญชีนี้เปิดใช้งานการยืนยันตัวตน 2 ชั้น (2FA) — กรอกรหัส 6 หลักจากแอปยืนยันตัวตนของคุณ</div>
@@ -58,41 +70,123 @@
 <script src="/js/api.js"></script>
 <script>
   let pendingMfaToken = null;
+  let loginMethod = "password"; // หรือ "pin"
+
+  function afterLoginResponse(data) {
+    // ใช้ร่วมกันทั้ง 3 วิธีล็อกอิน (รหัสผ่าน/PIN/ลายนิ้วมือ-ใบหน้า) — พฤติกรรมหลังยืนยันตัวตนขั้นแรกสำเร็จเหมือนกันหมด
+    if (data.mfa_required) {
+      pendingMfaToken = data.mfa_token;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("webauthnLoginBtn").style.display = "none";
+      document.getElementById("loginNoticeHint").style.display = "none";
+      document.getElementById("mfaForm").style.display = "block";
+      document.getElementById("mfaCode").focus();
+      return;
+    }
+    setTokens(data.access_token, data.refresh_token);
+    // ตั้งค่าไว้ให้หน้าสรุปผลงาน (surveyor-profile.html) รู้ว่าเพิ่งล็อกอินเข้ามาจริงๆ (ไม่ใช่แค่กดรีเฟรช/
+    // เข้าหน้าซ้ำ) จะได้เด้งป๊อปอัพ "งานที่ต้องรังวัดวันนี้" ให้เฉพาะช่างรังวัดตอนล็อกอินเท่านั้น — sessionStorage
+    // จะถูกอ่านแล้วลบทิ้งทันทีที่หน้านั้นใช้งาน จึงไม่เด้งซ้ำถ้ากลับมาหน้านี้อีกในเซสชันเดียวกัน
+    sessionStorage.setItem("dol_just_logged_in", "1");
+    window.location.href = "/dashboard.html";
+  }
+
+  document.getElementById("toggleMethodLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    loginMethod = loginMethod === "password" ? "pin" : "password";
+    document.getElementById("passwordField").style.display = loginMethod === "password" ? "block" : "none";
+    document.getElementById("pinField").style.display = loginMethod === "pin" ? "block" : "none";
+    document.getElementById("password").value = "";
+    document.getElementById("pin").value = "";
+    e.target.textContent = loginMethod === "password" ? "เข้าสู่ระบบด้วย PIN แทน" : "ใช้รหัสผ่านแทน";
+    document.getElementById("errorBox").style.display = "none";
+  });
 
   document.getElementById("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const username = document.getElementById("username").value.trim();
-    const password = document.getElementById("password").value;
     const errorBox = document.getElementById("errorBox");
     errorBox.style.display = "none";
 
     try {
-      const res = await fetch("/api/v1/auth/login", {
+      const path = loginMethod === "pin" ? "/api/v1/auth/login-pin" : "/api/v1/auth/login";
+      const body = loginMethod === "pin"
+        ? { username, pin: document.getElementById("pin").value.trim() }
+        : { username, password: document.getElementById("password").value };
+      const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error((data.error && data.error.message) || "เข้าสู่ระบบไม่สำเร็จ");
-
-      if (data.mfa_required) {
-        pendingMfaToken = data.mfa_token;
-        document.getElementById("loginForm").style.display = "none";
-        document.getElementById("loginNoticeHint").style.display = "none";
-        document.getElementById("mfaForm").style.display = "block";
-        document.getElementById("mfaCode").focus();
-        return;
-      }
-
-      setTokens(data.access_token, data.refresh_token);
-      // ตั้งค่าไว้ให้หน้าสรุปผลงาน (surveyor-profile.html) รู้ว่าเพิ่งล็อกอินเข้ามาจริงๆ (ไม่ใช่แค่กดรีเฟรช/
-      // เข้าหน้าซ้ำ) จะได้เด้งป๊อปอัพ "งานที่ต้องรังวัดวันนี้" ให้เฉพาะช่างรังวัดตอนล็อกอินเท่านั้น — sessionStorage
-      // จะถูกอ่านแล้วลบทิ้งทันทีที่หน้านั้นใช้งาน จึงไม่เด้งซ้ำถ้ากลับมาหน้านี้อีกในเซสชันเดียวกัน
-      sessionStorage.setItem("dol_just_logged_in", "1");
-      window.location.href = "/dashboard.html";
+      afterLoginResponse(data);
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.style.display = "block";
+    }
+  });
+
+  // ---------- เข้าสู่ระบบด้วยลายนิ้วมือ/ใบหน้า (WebAuthn) ----------
+  // ไม่ต้องกรอกรหัสผ่าน/PIN — ใช้แค่ชื่อผู้ใช้ที่กรอกไว้ในฟอร์มด้านบนหาอุปกรณ์ที่ลงทะเบียนไว้กับบัญชีนั้น
+  document.getElementById("webauthnLoginBtn").addEventListener("click", async () => {
+    const username = document.getElementById("username").value.trim();
+    const errBox = document.getElementById("webauthnErrorBox");
+    errBox.style.display = "none";
+
+    if (!username) {
+      errBox.textContent = "กรุณากรอกชื่อผู้ใช้ก่อน";
+      errBox.style.display = "block";
+      return;
+    }
+    if (!window.PublicKeyCredential) {
+      errBox.textContent = "เบราว์เซอร์หรืออุปกรณ์นี้ไม่รองรับการเข้าสู่ระบบด้วยลายนิ้วมือ/ใบหน้า";
+      errBox.style.display = "block";
+      return;
+    }
+
+    try {
+      const optRes = await fetch("/api/v1/auth/webauthn/authenticate/options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      const opts = await optRes.json();
+      if (!optRes.ok) throw new Error((opts.error && opts.error.message) || "ไม่สามารถเริ่มการยืนยันตัวตนได้");
+
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: b64urlToBuffer(opts.challenge),
+          rpId: opts.rpId,
+          timeout: opts.timeout,
+          userVerification: opts.userVerification,
+          allowCredentials: opts.allowCredentials.map((c) => ({ type: c.type, id: b64urlToBuffer(c.id) })),
+        },
+      });
+
+      const credentialPayload = {
+        id: bufferToB64url(assertion.rawId),
+        response: {
+          clientDataJSON: bufferToB64url(assertion.response.clientDataJSON),
+          authenticatorData: bufferToB64url(assertion.response.authenticatorData),
+          signature: bufferToB64url(assertion.response.signature),
+        },
+      };
+      const verifyRes = await fetch("/api/v1/auth/webauthn/authenticate/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, credential: credentialPayload }),
+      });
+      const data = await verifyRes.json();
+      if (!verifyRes.ok) throw new Error((data.error && data.error.message) || "ยืนยันตัวตนไม่สำเร็จ");
+      afterLoginResponse(data);
+    } catch (err) {
+      if (err.name === "NotAllowedError") {
+        errBox.textContent = "ยกเลิกการสแกน หรือใช้เวลานานเกินไป กรุณาลองใหม่";
+      } else {
+        errBox.textContent = err.message;
+      }
+      errBox.style.display = "block";
     }
   });
 
@@ -125,8 +219,10 @@
     document.getElementById("mfaErrorBox").style.display = "none";
     document.getElementById("mfaCode").value = "";
     document.getElementById("loginForm").style.display = "block";
+    document.getElementById("webauthnLoginBtn").style.display = "block";
     document.getElementById("loginNoticeHint").style.display = "block";
     document.getElementById("password").value = "";
+    document.getElementById("pin").value = "";
   });
 
   // ถ้ามี token อยู่แล้ว ให้ไปหน้า dashboard เลย
