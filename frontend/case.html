@@ -112,8 +112,9 @@
     // "รอการรังวัด" (APPOINTED) เผื่อพบว่าต้องเลื่อนนัด/งดรังวัด/นัดตรวจสอบใหม่/ยกเลิก/ถอนจ่าย/บันทึกรังวัดเสร็จไปเลยก็ได้
     REWORK_REQUIRED: ["APPOINTED", "SURVEY_DONE", "CLOSED", "POSTPONED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "CANCELLED"],
     // รังวัดในพื้นที่เสร็จแล้ว ยังไม่ใช่ขั้นตอนสุดท้าย — ไปต่อได้ทั้งปิดเรื่อง (ถอนจ่ายแล้ว) หรือย้อนกลับไปแก้ไข/
-    // รังวัดซ้ำถ้าพบปัญหาภายหลัง หรือยกเลิกในกรณีพิเศษ
-    SURVEY_DONE: ["CLOSED", "REWORK_REQUIRED", "CANCELLED"],
+    // รังวัดซ้ำถ้าพบปัญหาภายหลัง หรือยกเลิกในกรณีพิเศษ — เพิ่ม "งดรังวัด"/"นัดตรวจสอบใหม่" เผื่อพบภายหลังว่ารังวัด
+    // ยังไม่เสร็จจริง (จำกัดสิทธิ์เฉพาะผู้บริหาร/ผู้ดูแลระบบตั้งแต่ระดับจังหวัดขึ้นไป — กรองออกด้านล่างสำหรับบทบาทอื่น)
+    SURVEY_DONE: ["CLOSED", "REWORK_REQUIRED", "SURVEY_SKIPPED", "RE_APPOINTMENT_NEEDED", "CANCELLED"],
     // งานที่ "ถอนจ่ายแล้ว" เปิดกลับมาแก้ไข/รังวัดซ้ำได้ กรณีพบว่าต้องซ่อมงานหรือแก้ไขเพิ่มเติมภายหลัง
     // (จำกัดเฉพาะผู้บริหาร/ผู้ดูแลระบบ — กรองออกด้านล่างสำหรับบทบาทอื่น เช่นเดียวกับ CLOSED)
     CLOSED: ["REWORK_REQUIRED"],
@@ -306,7 +307,7 @@
             <div class="form-row"><label>จังหวัด</label><input id="p_province" value="${p.province || ""}"></div>
           </div>
           <div class="form-row">
-            <label>ลิงก์โลเคชั่น (เช่น จาก Google Maps)</label>
+            <label>ตำแหน่งของที่ดิน</label>
             <input id="p_location_url" type="url" placeholder="https://maps.google.com/?q=..." value="${p.location_url ? p.location_url.replace(/"/g, "&quot;") : ""}">
             ${p.location_url ? `<a href="${p.location_url}" target="_blank" rel="noopener" class="location-link" style="margin-top:6px;">📍 เปิดแผนที่นำทาง</a>` : ""}
           </div>
@@ -317,6 +318,21 @@
           <label style="display:block; font-size:13px; font-weight:600; margin-bottom:5px; color:#334155;">รูปภาพประกอบ (ไม่เกิน 3 รูป)</label>
           <div id="photosBox" class="loading">กำลังโหลดรูปภาพ...</div>
         </div>
+      </div>
+
+      <div class="card">
+        <h2>แผนที่หมุดหลักเขต (Shapefile)</h2>
+        <p class="subtitle" style="margin-top:-6px;">
+          บันทึกตำแหน่ง GPS ของหมุดหลักเขตแปลงหลัก และแปลงข้างเคียง (ถ้ามี) เพื่อสร้างไฟล์ shapefile พิกัดระบบ
+          Indian 1975 สำหรับนำเข้าโปรแกรม GIS ภายนอก — แผนภาพด้านล่างเป็นผังตำแหน่งสัมพัทธ์ของหมุดเพื่อตรวจสอบ
+          รูปร่างคร่าวๆ ก่อนสร้างไฟล์ ไม่ใช่ภาพถ่ายดาวเทียม/แผนที่ถนนจริง
+        </p>
+        <div id="markerMapWrap" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-bottom:12px;"></div>
+        <div id="markerLegend" style="margin-bottom:12px; font-size:12.5px;"></div>
+        <div id="markerControls"></div>
+        <div id="markerListBox" style="margin-top:14px;"></div>
+        <button type="button" class="btn btn-outline btn-sm" style="margin-top:12px;" onclick="downloadShapefile()">⬇️ สร้าง/ดาวน์โหลด Shapefile</button>
+        <div id="markerError" class="error-text" style="display:none; margin-top:8px;"></div>
       </div>
 
       <div class="card">
@@ -334,6 +350,7 @@
     renderChecklist();
     renderActions();
     loadPhotos();
+    loadMarkers();
     loadHistory();
     loadAssignmentHistory();
   }
@@ -526,6 +543,11 @@
       // ส่วนการ "เปิดเรื่องที่ถอนจ่ายแล้วกลับมาแก้ไข" (คือตอนอยู่สถานะ CLOSED เท่านั้น) ก็จำกัดเช่นกัน — แต่การ
       // ตั้งค่า REWORK_REQUIRED จากสถานะอื่น (เช่น รังวัดเสร็จแล้ว) ไม่ได้จำกัดสิทธิ์นี้ ให้คงไว้ตามปกติ
       if (currentCase.status === "CLOSED") nextOptions = nextOptions.filter((s) => s !== "REWORK_REQUIRED");
+      // "งดรังวัด"/"นัดตรวจสอบใหม่" จากสถานะ "รังวัดเสร็จแล้ว" โดยเฉพาะ ก็จำกัดเช่นกัน (ย้อนกลับว่ารังวัดยังไม่เสร็จจริง)
+      // ส่วนการตั้งค่าสถานะเดียวกันนี้จากสถานะอื่น เช่น รอการรังวัด/ต้องแก้ไขรังวัดซ้ำ ไม่ได้จำกัดสิทธิ์นี้ คงไว้ตามปกติ
+      if (currentCase.status === "SURVEY_DONE") {
+        nextOptions = nextOptions.filter((s) => s !== "SURVEY_SKIPPED" && s !== "RE_APPOINTMENT_NEEDED");
+      }
     }
 
     if (nextOptions.length > 0) {
@@ -564,6 +586,376 @@
       await loadCase();
     } catch (err) {
       alert(err.message);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // แผนที่หมุดหลักเขต (แปลงหลัก + แปลงข้างเคียง) และการสร้าง Shapefile (พิกัด Indian 1975 — ดูรายละเอียดที่
+  // backend/services/thai_datum.py) — พื้นแผนที่จริงวาดด้วยสูตร Web Mercator / slippy-map tile มาตรฐาน
+  // (สูตรเดียวกับที่ Leaflet/Google Maps/OpenLayers ใช้ภายใน) เขียนเองล้วนๆ ไม่พึ่งไลบรารีแผนที่จาก CDN เลย
+  // (เช่น Leaflet) ตามหลักการเดิมของระบบนี้ที่ไม่พึ่งไลบรารีภายนอกแม้แต่ตัวเดียว — ดูหลักการเดียวกันใน js/charts.js
+  // ภาพพื้นแผนที่ (tiles) มาจาก OpenStreetMap ซึ่งเป็นจุดเดียวในระบบทั้งหมดที่ต้องอาศัยอินเทอร์เน็ตของอุปกรณ์ที่
+  // เปิดหน้านี้ตอนแสดงผล (ต่างจากส่วนอื่นของระบบที่ทำงานได้แม้ไม่มีอินเทอร์เน็ตภายนอก) — ใช้ได้ฟรีไม่ต้องขอ API key
+  // เหมาะสำหรับต้นแบบ/พรีเซนต์ตอนนี้ เมื่อใช้งานจริงแนะนำให้เปลี่ยนไปต่อกับ LandsMaps ของกรมที่ดินแทน (จะได้เห็น
+  // ขอบเขตแปลงที่ดินจริงจากฐานข้อมูลกรมที่ดินซ้อนอยู่ด้วย ไม่ใช่แค่ถนน/อาคารทั่วไปแบบ OpenStreetMap)
+  // ---------------------------------------------------------------------
+  let markersData = [];
+  const MARKER_GROUP_COLORS = ["#dc2626", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777"];
+
+  function canAddMarkers() {
+    return ["system_admin", "administrator", "province_admin", "supervisor", "surveyor"].includes(currentUser.role);
+  }
+
+  async function loadMarkers() {
+    markersData = (await apiFetch("/survey-cases/" + caseId + "/markers")) || [];
+    renderMarkerSection();
+  }
+
+  function markerGroupsPresent() {
+    const seen = [];
+    markersData.forEach((m) => {
+      if (m.marker_group && !seen.includes(m.marker_group)) seen.push(m.marker_group);
+    });
+    return seen;
+  }
+
+  function renderMarkerSection() {
+    renderMarkerMap();
+    renderMarkerControls();
+    renderMarkerList();
+  }
+
+  // สูตร Web Mercator มาตรฐาน (เหมือนที่ Leaflet/Google Maps/OpenLayers ใช้ภายใน) — แปลง lat/lng องศา เป็นพิกเซล
+  // สัมบูรณ์ (global pixel) ของโลกทั้งใบที่ระดับซูมที่กำหนด (โลกทั้งใบกว้าง/สูง 256 * 2^zoom พิกเซลเสมอ)
+  const MERCATOR_TILE_SIZE = 256;
+  function lonToGlobalPx(lonDeg, zoom) {
+    return ((lonDeg + 180) / 360) * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
+  }
+  function latToGlobalPx(latDeg, zoom) {
+    const latRad = (latDeg * Math.PI) / 180;
+    const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2;
+    return y * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
+  }
+
+  function renderMarkerMap() {
+    const wrap = document.getElementById("markerMapWrap");
+    const legend = document.getElementById("markerLegend");
+    if (!markersData.length) {
+      wrap.style.height = "";
+      wrap.innerHTML = `<div class="subtitle" style="margin:0; padding:20px 0; text-align:center;">ยังไม่มีหมุดที่บันทึกไว้</div>`;
+      legend.innerHTML = "";
+      return;
+    }
+
+    const size = 420; // ผังสี่เหลี่ยมจัตุรัส (px)
+    const pad = 30;   // ระยะขอบกันหมุดชิดขอบเกินไป
+
+    const lats = markersData.map((m) => m.geo_lat);
+    const lngs = markersData.map((m) => m.geo_lng);
+    const latMin = Math.min(...lats), latMax = Math.max(...lats);
+    const lngMin = Math.min(...lngs), lngMax = Math.max(...lngs);
+
+    // เลือกระดับซูมสูงสุดที่ทำให้หมุดทุกจุดยังพอดีอยู่ในกรอบ (พร้อมระยะขอบ pad) — ยิ่งซูมมากยิ่งเห็นรายละเอียด
+    // ถนน/อาคารชัดขึ้น เหมาะกับแปลงที่ดินที่มักกว้างแค่ระดับสิบ/ร้อยเมตร (OpenStreetMap รองรับสูงสุดราว zoom 19)
+    let zoom = 19;
+    for (; zoom >= 3; zoom--) {
+      const w = lonToGlobalPx(lngMax, zoom) - lonToGlobalPx(lngMin, zoom);
+      const h = latToGlobalPx(latMin, zoom) - latToGlobalPx(latMax, zoom); // lat มาก -> px น้อย (แกน y กลับด้าน)
+      if (w <= size - 2 * pad && h <= size - 2 * pad) break;
+    }
+
+    const centerOriginX = lonToGlobalPx((lngMin + lngMax) / 2, zoom) - size / 2;
+    const centerOriginY = latToGlobalPx((latMin + latMax) / 2, zoom) - size / 2;
+    const toPx = (lat, lng) => ({
+      sx: lonToGlobalPx(lng, zoom) - centerOriginX,
+      sy: latToGlobalPx(lat, zoom) - centerOriginY,
+    });
+
+    // โมเสกภาพพื้นแผนที่จริงจาก OpenStreetMap — ครอบคลุมเฉพาะ tile ที่ตกอยู่ในกรอบขนาด size×size เท่านั้น
+    // (ด้วยขนาดกรอบคงที่ จำนวน tile ที่ต้องโหลดจะอยู่ราวๆ 3×3 เท่านั้นไม่ว่าจะซูมระดับไหนก็ตาม)
+    const tilesPerSide = Math.pow(2, zoom);
+    const firstTileX = Math.floor(centerOriginX / MERCATOR_TILE_SIZE);
+    const lastTileX = Math.floor((centerOriginX + size) / MERCATOR_TILE_SIZE);
+    const firstTileY = Math.floor(centerOriginY / MERCATOR_TILE_SIZE);
+    const lastTileY = Math.floor((centerOriginY + size) / MERCATOR_TILE_SIZE);
+    let tilesHtml = "";
+    for (let tx = firstTileX; tx <= lastTileX; tx++) {
+      const wrappedX = ((tx % tilesPerSide) + tilesPerSide) % tilesPerSide; // wrap รอบโลกตามยาว (ลองจิจูด)
+      for (let ty = firstTileY; ty <= lastTileY; ty++) {
+        if (ty < 0 || ty >= tilesPerSide) continue; // ละติจูดไม่ wrap (เหนือ/ใต้สุดของแผนที่)
+        const left = tx * MERCATOR_TILE_SIZE - centerOriginX;
+        const top = ty * MERCATOR_TILE_SIZE - centerOriginY;
+        tilesHtml += `<img src="https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png" loading="lazy" alt=""
+          style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;" />`;
+      }
+    }
+
+    const groups = {};
+    markersData.forEach((m) => {
+      const key = m.marker_group || "แปลงหลัก";
+      (groups[key] = groups[key] || []).push(m);
+    });
+    const groupNames = Object.keys(groups);
+
+    let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"
+      style="position:absolute; left:0; top:0; pointer-events:none;">`;
+    groupNames.forEach((name, gi) => {
+      const color = name === "แปลงหลัก" ? "#16a34a" : MARKER_GROUP_COLORS[gi % MARKER_GROUP_COLORS.length];
+      const groupPts = groups[name].map((m) => toPx(m.geo_lat, m.geo_lng));
+      if (groupPts.length >= 2) {
+        let pointsAttr = groupPts.map((p) => `${p.sx.toFixed(1)},${p.sy.toFixed(1)}`).join(" ");
+        if (groupPts.length >= 3) pointsAttr += ` ${groupPts[0].sx.toFixed(1)},${groupPts[0].sy.toFixed(1)}`;
+        svg += `<polyline points="${pointsAttr}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" />`;
+      }
+      groups[name].forEach((m) => {
+        const s = toPx(m.geo_lat, m.geo_lng);
+        svg += `<circle cx="${s.sx.toFixed(1)}" cy="${s.sy.toFixed(1)}" r="6" fill="${color}" stroke="#fff" stroke-width="2" />`;
+        svg += `<text x="${s.sx.toFixed(1)}" y="${(s.sy - 9).toFixed(1)}" font-size="10" font-weight="600" text-anchor="middle" fill="#1e293b" stroke="#fff" stroke-width="2.5" paint-order="stroke">${m.sequence_no}</text>`;
+      });
+    });
+    svg += `</svg>`;
+
+    wrap.style.height = size + "px";
+    wrap.style.padding = "0";
+    wrap.style.overflow = "hidden";
+    wrap.innerHTML = `<div style="position:relative; width:${size}px; height:${size}px; margin:0 auto; overflow:hidden; border-radius:6px; background:#e2e8f0;">${tilesHtml}${svg}</div>`;
+
+    legend.innerHTML =
+      groupNames
+        .map((name, gi) => {
+          const color = name === "แปลงหลัก" ? "#16a34a" : MARKER_GROUP_COLORS[gi % MARKER_GROUP_COLORS.length];
+          return `<span style="display:inline-flex; align-items:center; gap:5px; margin-right:14px;"><span style="width:10px; height:10px; border-radius:50%; background:${color}; display:inline-block;"></span>${name} (${groups[name].length} หมุด)</span>`;
+        })
+        .join("") +
+      `<div class="subtitle" style="margin-top:6px; font-size:10.5px;">แผนที่พื้นฐาน: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ต้นแบบสำหรับพรีเซนต์ — งานจริงแนะนำเปลี่ยนไปใช้ LandsMaps ของกรมที่ดิน) ต้องมีอินเทอร์เน็ตเพื่อโหลดภาพแผนที่พื้นหลัง</div>`;
+  }
+
+  function renderMarkerControls() {
+    const box = document.getElementById("markerControls");
+    if (!canAddMarkers()) {
+      box.innerHTML = markersData.length ? "" : `<div class="subtitle" style="margin:0;">บทบาทของท่านไม่มีสิทธิ์เพิ่มหมุด</div>`;
+      return;
+    }
+    const groups = markerGroupsPresent();
+    box.innerHTML = `
+      <div class="form-row" style="max-width:340px;">
+        <label>เพิ่มหมุดให้แปลง</label>
+        <select id="markerGroupSelect">
+          <option value="">แปลงหลัก</option>
+          ${groups.map((g) => `<option value="${g.replace(/"/g, "&quot;")}">${g}</option>`).join("")}
+          <option value="__new__">+ เพิ่มแปลงข้างเคียงใหม่...</option>
+        </select>
+      </div>
+      <div class="form-row" style="max-width:340px;">
+        <label>ป้ายชื่อหมุด (ถ้ามี)</label>
+        <input type="text" id="markerLabelInput" placeholder="เช่น หมุดที่ 1 มุมทิศเหนือ">
+      </div>
+      <div class="form-row" style="max-width:340px;">
+        <label>ภาพถ่ายหมุด</label>
+        <input type="file" id="markerPhotoInput" accept="image/*" capture="environment">
+      </div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="captureAndAddMarker()">📍 บันทึกตำแหน่งปัจจุบัน + เพิ่มหมุด</button>
+
+      <div style="margin-top:16px; padding-top:14px; border-top:1px dashed #e2e8f0;">
+        <div class="form-row" style="max-width:340px;">
+          <label>นำเข้าหมุดจากไฟล์ Shapefile (.zip)</label>
+          <input type="file" id="markerImportFileInput" accept=".zip">
+        </div>
+        <div class="form-row" style="max-width:340px;">
+          <label>นำเข้าเป็นแปลง</label>
+          <select id="markerImportGroupSelect">
+            <option value="">แปลงหลัก</option>
+            ${groups.map((g) => `<option value="${g.replace(/"/g, "&quot;")}">${g}</option>`).join("")}
+            <option value="__new__">+ เพิ่มแปลงข้างเคียงใหม่...</option>
+          </select>
+        </div>
+        <div class="form-row" style="max-width:340px;">
+          <label>โซน UTM ของไฟล์ (ถ้าตรวจจาก .prj อัตโนมัติไม่ได้)</label>
+          <select id="markerImportZoneSelect">
+            <option value="">ตรวจอัตโนมัติจากไฟล์</option>
+            <option value="47">โซน 47N (ลองจิจูด &lt; 102°E — ภาคกลาง/เหนือ/ใต้ตอนบน)</option>
+            <option value="48">โซน 48N (ลองจิจูด ≥ 102°E — ภาคอีสาน/ตะวันออก)</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="importShapefile()">⬆️ นำเข้าหมุดจากไฟล์ Shapefile</button>
+        <div class="subtitle" style="margin:6px 0 0; font-size:11.5px;">
+          รองรับไฟล์ .zip ที่รวม .shp/.shx/.dbf (พิกัดระบบ Indian 1975 UTM) — ไฟล์ประเภทจุด (Point) จะนำเข้าทุกจุดตามลำดับในไฟล์
+          ไฟล์ประเภทรูปปิด (Polygon) จะนำเข้าเฉพาะแปลงแรกที่พบเท่านั้น
+        </div>
+      </div>
+    `;
+    document.getElementById("markerGroupSelect").addEventListener("change", (e) => {
+      if (e.target.value === "__new__") {
+        const name = (prompt('ชื่อแปลงข้างเคียง (เช่น "ข้างเคียงทิศเหนือ - นายสมชาย")') || "").trim();
+        if (name) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          e.target.insertBefore(opt, e.target.lastElementChild);
+          e.target.value = name;
+        } else {
+          e.target.value = "";
+        }
+      }
+    });
+    document.getElementById("markerImportGroupSelect").addEventListener("change", (e) => {
+      if (e.target.value === "__new__") {
+        const name = (prompt('ชื่อแปลงข้างเคียง (เช่น "ข้างเคียงทิศเหนือ - นายสมชาย")') || "").trim();
+        if (name) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          e.target.insertBefore(opt, e.target.lastElementChild);
+          e.target.value = name;
+        } else {
+          e.target.value = "";
+        }
+      }
+    });
+  }
+
+  function renderMarkerList() {
+    const box = document.getElementById("markerListBox");
+    if (!markersData.length) {
+      box.innerHTML = "";
+      return;
+    }
+    const groups = {};
+    markersData.forEach((m) => {
+      const key = m.marker_group || "แปลงหลัก";
+      (groups[key] = groups[key] || []).push(m);
+    });
+    box.innerHTML = Object.entries(groups)
+      .map(
+        ([name, items]) => `
+        <details style="margin-bottom:8px;" open>
+          <summary style="cursor:pointer; font-weight:600; font-size:13px;">${name} (${items.length} หมุด)</summary>
+          <ul style="margin:8px 0 0; padding-left:0; list-style:none;">
+            ${items
+              .map(
+                (m) => `
+              <li style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px dashed #e2e8f0; font-size:12.5px;">
+                <span>#${m.sequence_no} ${m.label || ""} <span style="color:var(--text-muted);">(${m.geo_lat.toFixed(6)}, ${m.geo_lng.toFixed(6)})</span></span>
+                ${canAddMarkers() ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;" onclick="deleteMarkerPoint('${m.id}')">ลบ</button>` : ""}
+              </li>
+            `
+              )
+              .join("")}
+          </ul>
+        </details>
+      `
+      )
+      .join("");
+  }
+
+  async function captureAndAddMarker() {
+    const errorBox = document.getElementById("markerError");
+    errorBox.style.display = "none";
+    const fileInput = document.getElementById("markerPhotoInput");
+    const file = fileInput.files[0];
+    if (!file) {
+      errorBox.textContent = "กรุณาเลือก/ถ่ายภาพหมุดก่อน";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (!navigator.geolocation) {
+      errorBox.textContent = "เบราว์เซอร์นี้ไม่รองรับการอ่านตำแหน่ง GPS";
+      errorBox.style.display = "block";
+      return;
+    }
+    const groupVal = document.getElementById("markerGroupSelect").value;
+    const group = groupVal && groupVal !== "__new__" ? groupVal : "";
+    const label = document.getElementById("markerLabelInput").value.trim();
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await apiUpload("/survey-cases/" + caseId + "/markers", file, {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            label,
+            group,
+          });
+          fileInput.value = "";
+          document.getElementById("markerLabelInput").value = "";
+          await loadMarkers();
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.style.display = "block";
+        }
+      },
+      (geoErr) => {
+        errorBox.textContent = "ไม่สามารถอ่านตำแหน่ง GPS ได้: " + geoErr.message;
+        errorBox.style.display = "block";
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  async function importShapefile() {
+    const errorBox = document.getElementById("markerError");
+    errorBox.style.display = "none";
+    const fileInput = document.getElementById("markerImportFileInput");
+    const file = fileInput.files[0];
+    if (!file) {
+      errorBox.textContent = "กรุณาเลือกไฟล์ shapefile (.zip) ก่อน";
+      errorBox.style.display = "block";
+      return;
+    }
+    const groupVal = document.getElementById("markerImportGroupSelect").value;
+    const group = groupVal && groupVal !== "__new__" ? groupVal : "";
+    const zone = document.getElementById("markerImportZoneSelect").value;
+
+    try {
+      const result = await apiUpload("/survey-cases/" + caseId + "/markers/import-shapefile", file, { group, zone });
+      fileInput.value = "";
+      await loadMarkers();
+      alert(
+        `นำเข้าหมุดสำเร็จ ${result.imported_count} จุด (โซน UTM ${result.zone_used}N` +
+          (result.zone_auto_detected ? " ตรวจจับอัตโนมัติจากไฟล์" : "") +
+          `)` +
+          (result.group_count > 1 ? `\nไฟล์นี้มี ${result.group_count} แปลง — ระบบแยกเป็นคนละกลุ่มให้อัตโนมัติแล้ว` : "")
+      );
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  }
+
+  async function deleteMarkerPoint(markerId) {
+    if (!confirm("ลบหมุดนี้หรือไม่?")) return;
+    try {
+      await apiFetch("/markers/" + markerId, { method: "DELETE" });
+      await loadMarkers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function downloadShapefile() {
+    const errorBox = document.getElementById("markerError");
+    errorBox.style.display = "none";
+    try {
+      const { access } = getTokens();
+      const res = await fetch("/api/v1/survey-cases/" + caseId + "/markers/shapefile", {
+        headers: access ? { Authorization: "Bearer " + access } : {},
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data.error && data.error.message) || "สร้าง shapefile ไม่สำเร็จ");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = (currentCase.case_code || "boundary").replace(/[^A-Za-z0-9_-]/g, "-") + "_shapefile.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
     }
   }
 

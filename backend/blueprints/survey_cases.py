@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import Blueprint, g, request
 
 from blueprints.case_documents import UPLOAD_DIR
-from constants import ALLOWED_TRANSITIONS, RESTRICTED_STATUS_TRANSITIONS, CaseStatus, Role
+from constants import ALLOWED_TRANSITIONS, RESTRICTED_FROM_SURVEY_DONE, RESTRICTED_STATUS_TRANSITIONS, CaseStatus, Role
 from db import get_connection
 from helpers import (
     err,
@@ -717,6 +717,16 @@ def update_status(case_id):
         # เพราะตัวนั้น gate ตาม new_status ไม่ใช่ status ปัจจุบัน)
         if case["status"] == CaseStatus.CLOSED and g.current_user["role"] not in (Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN):
             return err("เปิดเรื่องที่ถอนจ่ายแล้วกลับมาแก้ไขได้เฉพาะผู้บริหารหรือผู้ดูแลระบบเท่านั้น", 403)
+
+        # จากสถานะ "รังวัดเสร็จแล้ว" (SURVEY_DONE) เปลี่ยนเป็น "งดรังวัด"/"นัดตรวจสอบใหม่" ถือเป็นการย้อนกลับว่า
+        # จริงๆ แล้วรังวัดยังไม่เสร็จ — จำกัดสิทธิ์เฉพาะผู้บริหาร/ผู้ดูแลระบบตั้งแต่ระดับจังหวัดขึ้นไปเท่านั้น
+        # (การเปลี่ยนเป็นสถานะเดียวกันนี้จากสถานะอื่น เช่น APPOINTED/REWORK_REQUIRED ยังไม่จำกัดสิทธิ์เหมือนเดิม)
+        if (
+            case["status"] == CaseStatus.SURVEY_DONE
+            and new_status in RESTRICTED_FROM_SURVEY_DONE
+            and g.current_user["role"] not in (Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN)
+        ):
+            return err("เปลี่ยนสถานะนี้จากขั้นตอน 'รังวัดเสร็จแล้ว' ได้เฉพาะผู้บริหารหรือผู้ดูแลระบบเท่านั้น", 403)
 
         allowed = ALLOWED_TRANSITIONS.get(case["status"], set())
         if new_status not in allowed:

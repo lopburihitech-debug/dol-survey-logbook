@@ -162,7 +162,10 @@ CREATE TABLE IF NOT EXISTS case_documents (
     created_at TEXT NOT NULL,
     -- ใช้เฉพาะ document_type = 'boundary_marker' (แผนที่หมุดหลักเขต): ลำดับหมุด + ป้ายชื่อหมุด
     sequence_no INTEGER,
-    label TEXT
+    label TEXT,
+    -- ใช้เฉพาะ document_type = 'boundary_marker' เช่นกัน: NULL/ว่าง = หมุดของแปลงหลัก, ค่าอื่น = ชื่อแปลงข้างเคียง
+    -- ที่หมุดจุดนี้เป็นส่วนหนึ่งของขอบเขต (รองรับหลายแปลงข้างเคียงต่อเรื่องเดียว แยกด้วยชื่อกลุ่มนี้)
+    marker_group TEXT
 );
 
 CREATE TABLE IF NOT EXISTS case_neighbors (

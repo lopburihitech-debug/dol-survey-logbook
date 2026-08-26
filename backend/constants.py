@@ -72,8 +72,16 @@ ALLOWED_TRANSITIONS = {
         CaseStatus.CANCELLED,
     },
     # รังวัดในพื้นที่เสร็จแล้ว รอเจ้าหน้าที่ปิดเรื่อง — ยังไม่ใช่ขั้นตอนสุดท้าย จึงไปต่อได้ทั้งปิดเรื่อง (ถอนจ่ายแล้ว)
-    # หรือย้อนกลับไปแก้ไข/รังวัดซ้ำถ้าพบปัญหาภายหลัง หรือยกเลิกในกรณีพิเศษ
-    CaseStatus.SURVEY_DONE: {CaseStatus.CLOSED, CaseStatus.REWORK_REQUIRED, CaseStatus.CANCELLED},
+    # หรือย้อนกลับไปแก้ไข/รังวัดซ้ำถ้าพบปัญหาภายหลัง หรือยกเลิกในกรณีพิเศษ — เพิ่ม SURVEY_SKIPPED/RE_APPOINTMENT_NEEDED
+    # เผื่อกรณีตรวจพบภายหลังว่าจริงๆ แล้วรังวัดไม่สำเร็จ/ต้องนัดใหม่ทั้งที่บันทึกว่า "รังวัดเสร็จแล้ว" ไปก่อนหน้านี้
+    # (จำกัดสิทธิ์เฉพาะผู้บริหาร/ผู้ดูแลระบบเท่านั้น ตรวจที่ endpoint update_status — ดู RESTRICTED ด้านล่าง)
+    CaseStatus.SURVEY_DONE: {
+        CaseStatus.CLOSED,
+        CaseStatus.REWORK_REQUIRED,
+        CaseStatus.SURVEY_SKIPPED,
+        CaseStatus.RE_APPOINTMENT_NEEDED,
+        CaseStatus.CANCELLED,
+    },
     # เผื่องานที่ "ถอนจ่ายแล้ว" (CLOSED) ต้องกลับมาแก้ไข/รังวัดซ้ำภายหลัง (เช่น พบข้อผิดพลาด/ต้องซ่อมงาน)
     # อนุญาตให้ย้อนกลับเป็น REWORK_REQUIRED ได้ — จำกัดเฉพาะผู้บริหาร/ผู้ดูแลระบบเท่านั้น (ตรวจที่ endpoint update_status)
     # จากนั้นไหลกลับเข้าเส้นทางปกติผ่าน REWORK_REQUIRED ด้านบน ซึ่งเลือกสถานะถัดไปได้ครบเหมือน APPOINTED
@@ -89,6 +97,13 @@ ALLOWED_TRANSITIONS = {
 
 # สถานะที่จำกัดสิทธิ์เฉพาะผู้บริหาร/ผู้ดูแลระบบ เวลาเลือกจากดรอปดาวน์ "เปลี่ยนสถานะ" (ขั้นตอนสุดท้ายของงาน)
 RESTRICTED_STATUS_TRANSITIONS = {CaseStatus.CLOSED}
+
+# เปลี่ยนสถานะจาก "รังวัดเสร็จแล้ว" (SURVEY_DONE) ไปเป็นสถานะเหล่านี้ — จำกัดสิทธิ์เฉพาะผู้บริหาร/ผู้ดูแลระบบ
+# ตั้งแต่ระดับจังหวัดขึ้นไป (system_admin/administrator/province_admin) เท่านั้น เพราะเป็นการย้อนกลับว่างานที่เคย
+# บันทึกว่ารังวัดเสร็จแล้วจริงๆ แล้วไม่เสร็จ/ต้องนัดใหม่ — แยกจาก RESTRICTED_STATUS_TRANSITIONS ด้านบนเพราะตัวนั้น
+# gate ตาม new_status อย่างเดียวไม่สนสถานะปัจจุบัน ส่วนตัวนี้ gate เฉพาะเมื่อสถานะปัจจุบันคือ SURVEY_DONE เท่านั้น
+# (การเปลี่ยนเป็นสถานะเดียวกันนี้จากสถานะอื่น เช่น APPOINTED/REWORK_REQUIRED ยังคงไม่จำกัดสิทธิ์เหมือนเดิม)
+RESTRICTED_FROM_SURVEY_DONE = {CaseStatus.SURVEY_SKIPPED, CaseStatus.RE_APPOINTMENT_NEEDED}
 
 # ตัวเลือกสถานะที่แสดงในหน้าจอ "ดำเนินการ" ของ case.html (ใช้ทั้ง backend เพื่ออ้างอิง label และ frontend เพื่อ mirror)
 ACTION_STATUS_LABELS = {

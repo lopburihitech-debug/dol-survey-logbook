@@ -42,6 +42,7 @@ _COLUMN_MIGRATIONS = [
     ("survey_cases", "announcement_status", "TEXT"),
     ("case_documents", "sequence_no", "INTEGER"),
     ("case_documents", "label", "TEXT"),
+    ("case_documents", "marker_group", "TEXT"),
     ("users", "mfa_secret", "TEXT"),
     ("users", "failed_login_attempts", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "lockout_until", "TEXT"),

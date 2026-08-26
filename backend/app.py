@@ -11,9 +11,10 @@ from flask import Flask, jsonify, send_from_directory
 
 logger = logging.getLogger(__name__)
 
-from blueprints import appointments, auth, case_documents, dashboard, offices, public_track, survey_cases, survey_types, surveyors, users
+from blueprints import appointments, auth, boundary_markers, case_documents, dashboard, offices, public_track, survey_cases, survey_types, surveyors, users
 from config import settings, INSECURE_DEFAULT_JWT_SECRET
-from db import init_db
+from db import DATABASE_URL, DB_PATH, init_db
+from services.backup_scheduler import start_scheduled_backups
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -29,6 +30,7 @@ app.register_blueprint(survey_types.bp)
 app.register_blueprint(survey_cases.bp)
 app.register_blueprint(appointments.bp)
 app.register_blueprint(case_documents.bp)
+app.register_blueprint(boundary_markers.bp)
 app.register_blueprint(dashboard.bp)
 app.register_blueprint(public_track.bp)
 
@@ -92,6 +94,11 @@ def _guard_jwt_secret():
 # สร้างตารางฐานข้อมูลอัตโนมัติเมื่อ import โมดูลนี้ (ทั้งตอนรัน dev server และตอนรันผ่าน gunicorn)
 init_db()
 _guard_jwt_secret()
+
+# สำรองข้อมูลอัตโนมัติเป็นระยะ (เฉพาะตอนใช้ SQLite — ดู services/backup_scheduler.py สำหรับรายละเอียดและ
+# ข้อจำกัด) ปลอดภัยที่จะเรียกจากทุก worker process ของ gunicorn พร้อมกัน มีแค่ worker เดียวที่จะรันจริง
+if not DATABASE_URL:
+    start_scheduled_backups(DB_PATH)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
