@@ -9,6 +9,20 @@ from services.audit import log_action
 bp = Blueprint("offices", __name__, url_prefix="/api/v1/offices")
 
 
+def _parse_coord(value, lo, hi):
+    """แปลงค่าพิกัด (lat/lng) จาก payload ให้เป็น float หรือ None — คืน (ok, value_or_error_message) เพื่อแยกกรณี
+    'ไม่ได้ส่งมา' (ไม่แตะต้องค่าเดิม) ออกจาก 'ส่งมาเป็นค่าว่าง' (ล้างพิกัดเดิมทิ้ง) ออกจาก 'ส่งมาแต่ผิดรูปแบบ/นอกช่วง'"""
+    if value is None or value == "":
+        return True, None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return False, "พิกัดต้องเป็นตัวเลข"
+    if not (lo <= f <= hi):
+        return False, f"ค่าต้องอยู่ระหว่าง {lo} ถึง {hi}"
+    return True, f
+
+
 @bp.get("")
 @login_required
 def list_offices():
@@ -33,6 +47,13 @@ def create_office():
     if not all(payload.get(f) for f in required):
         return err(f"ต้องระบุ {', '.join(required)}")
 
+    lat_ok, lat = _parse_coord(payload.get("lat"), -90, 90)
+    if not lat_ok:
+        return err(f"ละติจูดไม่ถูกต้อง: {lat}")
+    lng_ok, lng = _parse_coord(payload.get("lng"), -180, 180)
+    if not lng_ok:
+        return err(f"ลองจิจูดไม่ถูกต้อง: {lng}")
+
     conn = get_connection()
     try:
         if conn.execute("SELECT 1 FROM offices WHERE code = ?", (payload["code"],)).fetchone():
@@ -41,9 +62,9 @@ def create_office():
         office_id = new_id()
         ts = now_iso()
         conn.execute(
-            """INSERT INTO offices (id, code, name, province, district, address, is_active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
-            (office_id, payload["code"], payload["name"], payload["province"], payload.get("district"), payload.get("address"), ts, ts),
+            """INSERT INTO offices (id, code, name, province, district, address, lat, lng, is_active, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (office_id, payload["code"], payload["name"], payload["province"], payload.get("district"), payload.get("address"), lat, lng, ts, ts),
         )
         conn.commit()
         log_action(conn, g.current_user["id"], "CREATE", "offices", office_id, after={"code": payload["code"], "name": payload["name"]})
@@ -55,7 +76,7 @@ def create_office():
 
 # หมายเหตุ: ไม่ให้แก้ "code" ผ่านช่องทางนี้ เพราะรหัสสำนักงานถูกฝังอยู่ในเลข รว.12 ของเรื่องที่ออกไปแล้ว
 # (ดู services/case_code.py) การเปลี่ยนรหัสทีหลังจะทำให้เลขเก่ากับสำนักงานไม่ตรงกันอีกต่อไป
-UPDATABLE_OFFICE_FIELDS = {"name", "province", "district", "address", "is_active"}
+UPDATABLE_OFFICE_FIELDS = {"name", "province", "district", "address", "lat", "lng", "is_active"}
 
 
 @bp.patch("/<office_id>")
@@ -70,6 +91,16 @@ def update_office(office_id):
         return err("ต้องระบุชื่อสำนักงาน")
     if "province" in fields and not fields["province"]:
         return err("ต้องระบุจังหวัด")
+    if "lat" in fields:
+        lat_ok, lat = _parse_coord(fields["lat"], -90, 90)
+        if not lat_ok:
+            return err(f"ละติจูดไม่ถูกต้อง: {lat}")
+        fields["lat"] = lat
+    if "lng" in fields:
+        lng_ok, lng = _parse_coord(fields["lng"], -180, 180)
+        if not lng_ok:
+            return err(f"ลองจิจูดไม่ถูกต้อง: {lng}")
+        fields["lng"] = lng
 
     conn = get_connection()
     try:

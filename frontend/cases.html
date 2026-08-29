@@ -39,9 +39,9 @@
     <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>เกินนัดรังวัด</th><th>เช็คลิสต์</th><th>สถานะ</th><th id="manageColHeader" style="display:none;">จัดการ</th></tr>
+        <tr><th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>เกินนัดรังวัด</th><th>เช็คลิสต์</th><th>สถานะ</th><th>ความพึงพอใจ</th><th id="manageColHeader" style="display:none;">จัดการ</th></tr>
       </thead>
-      <tbody id="casesBody"><tr><td colspan="9" class="loading">กำลังโหลด...</td></tr></tbody>
+      <tbody id="casesBody"><tr><td colspan="10" class="loading">กำลังโหลด...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -389,6 +389,22 @@
     return s.full_name + (s.nickname ? ` (${s.nickname})` : "");
   }
 
+  // ผลความพึงพอใจ (ให้คะแนนได้เฉพาะเรื่องที่เสร็จสิ้น/ถอนจ่ายแล้ว — ตรงกับเงื่อนไข can_rate_satisfaction ฝั่ง
+  // backend/blueprints/public_track.py) แสดงเป็นหน้ายิ้มอย่างเดียวในตารางรายการ (สแกนดูรวดเร็วว่าเรื่องไหนมีปัญหา
+  // โดยไม่ต้องอ่านตัวเลข) ส่วนคะแนนตัวเลขที่แน่นอน + ความคิดเห็น ดูได้จาก tooltip เวลาเมาส์ชี้ หรือเปิดเข้าไปดู
+  // รายละเอียดเรื่อง (case.html) ซึ่งแสดงทั้งหน้ายิ้มและตัวเลขคะแนนอยู่แล้ว
+  const SATISFACTION_EMOJI = { 1: "😞", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
+  const RATABLE_STATUSES = new Set(["COMPLETED", "CLOSED"]);
+
+  function satisfactionCell(c) {
+    if (!RATABLE_STATUSES.has(c.status)) return `<span style="color:var(--text-muted);">-</span>`;
+    const r = c.satisfaction_rating;
+    if (!r) return `<span class="subtitle" style="font-size:12px;">ยังไม่ให้คะแนน</span>`;
+    const titleText = `คะแนน ${r.rating}/5${r.comment ? " — " + r.comment : ""}`;
+    const title = titleText.replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    return `<span title="${title}" style="font-size:18px; cursor:default;">${SATISFACTION_EMOJI[r.rating] || "🙂"}</span>`;
+  }
+
   // ล้างตัวกรองทั้งหมด (คำค้นหา/สถานะ/ประเภทงาน/ช่างรังวัด) กลับเป็นค่าเริ่มต้น แล้วโหลดรายการทั้งหมดใหม่ทันที
   function clearFilters() {
     document.getElementById("searchInput").value = "";
@@ -411,7 +427,7 @@
 
     const cases = await apiFetch("/survey-cases?" + params.toString());
     const tbody = document.getElementById("casesBody");
-    const colspan = (canEditCase || canDeleteCase) ? 10 : 9;
+    const colspan = (canEditCase || canDeleteCase) ? 11 : 10;
     if (!cases || cases.length === 0) {
       tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">ไม่พบรายการที่ตรงเงื่อนไข</td></tr>`;
       return;
@@ -433,6 +449,7 @@
         <td>${appointmentOverdueBadge(c)}</td>
         <td>${checklistFull(c)}</td>
         <td>${statusBadge(c.status)}</td>
+        <td>${satisfactionCell(c)}</td>
         ${manageCellHtml(c)}
       </tr>`
       )

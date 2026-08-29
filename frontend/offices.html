@@ -47,6 +47,11 @@
         <div class="form-row"><label>อำเภอ</label><input type="text" id="o_district"></div>
       </div>
       <div class="form-row"><label>ที่อยู่</label><input type="text" id="o_address"></div>
+      <div class="form-grid">
+        <div class="form-row"><label>ละติจูด (Lat)</label><input type="number" step="any" min="-90" max="90" id="o_lat" placeholder="เช่น 14.7995"></div>
+        <div class="form-row"><label>ลองจิจูด (Lng)</label><input type="number" step="any" min="-180" max="180" id="o_lng" placeholder="เช่น 100.6534"></div>
+      </div>
+      <div class="subtitle" style="margin:-6px 0 10px;">พิกัดสำนักงาน (ไม่บังคับ) — ใช้เป็นจุดอ้างอิงคำนวณระยะทางในหน้า "แผนที่ช่างรังวัด" หาได้จาก Google Maps: คลิกขวาที่ตำแหน่งสำนักงาน แล้วคัดลอกตัวเลขพิกัดที่ขึ้นมา</div>
       <div class="form-row" id="o_active_row" style="display:none;">
         <label><input type="checkbox" id="o_is_active" style="width:auto; display:inline-block; margin-right:6px;"> เปิดใช้งานอยู่ (ยกเลิกติ๊กเพื่อปิดใช้งานสำนักงานนี้ชั่วคราว)</label>
       </div>
@@ -125,6 +130,8 @@
     document.getElementById("o_province").value = o.province || "";
     document.getElementById("o_district").value = o.district || "";
     document.getElementById("o_address").value = o.address || "";
+    document.getElementById("o_lat").value = (o.lat === null || o.lat === undefined) ? "" : o.lat;
+    document.getElementById("o_lng").value = (o.lng === null || o.lng === undefined) ? "" : o.lng;
     document.getElementById("o_active_row").style.display = "block";
     document.getElementById("o_is_active").checked = !!o.is_active;
     document.getElementById("officeModal").style.display = "flex";
@@ -143,12 +150,16 @@
     const errorBox = document.getElementById("officeFormError");
     errorBox.style.display = "none";
     try {
+      const lat = document.getElementById("o_lat").value.trim();
+      const lng = document.getElementById("o_lng").value.trim();
       if (editingId) {
         const payload = {
           name: document.getElementById("o_name").value,
           province: document.getElementById("o_province").value,
           district: document.getElementById("o_district").value || null,
           address: document.getElementById("o_address").value || null,
+          lat: lat === "" ? null : lat,
+          lng: lng === "" ? null : lng,
           is_active: document.getElementById("o_is_active").checked ? 1 : 0,
         };
         await apiFetch("/offices/" + editingId, { method: "PATCH", body: JSON.stringify(payload) });
@@ -159,6 +170,8 @@
           province: document.getElementById("o_province").value,
           district: document.getElementById("o_district").value || null,
           address: document.getElementById("o_address").value || null,
+          lat: lat === "" ? null : lat,
+          lng: lng === "" ? null : lng,
         };
         await apiFetch("/offices", { method: "POST", body: JSON.stringify(payload) });
       }

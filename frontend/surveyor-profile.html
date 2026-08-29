@@ -28,6 +28,7 @@
 </div>
 
 <script src="/js/api.js"></script>
+<script src="/js/charts.js"></script>
 <script>
   requireAuth();
 
@@ -59,6 +60,19 @@
     if (isNaN(d.getTime())) return yearMonth;
     return d.toLocaleDateString("th-TH", { year: "numeric", month: "long" });
   }
+
+  // ป้ายเดือนแบบย่อ (เช่น "ส.ค. 69") สำหรับใช้เป็นป้ายกำกับแกนของกราฟแท่งแนวโน้มรายเดือน — ยาวเกินไปถ้าใช้ monthLabel()
+  // เต็มรูปแบบด้านบน เพราะพื้นที่ป้ายกำกับข้างกราฟมีจำกัด
+  function shortMonthLabel(yearMonth) {
+    const d = new Date(yearMonth + "-01");
+    if (isNaN(d.getTime())) return yearMonth;
+    return d.toLocaleDateString("th-TH", { month: "short", year: "2-digit" });
+  }
+
+  // อีโมจิ/สีระดับความพึงพอใจ 1-5 — ต้องตรงกับ SATISFACTION_EMOJI ในหน้ารายการงาน (cases.html) เพื่อให้ความหมายของ
+  // อีโมจิเดียวกันตรงกันทั้งระบบ
+  const SATISFACTION_EMOJI = { 1: "😞", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
+  const SATISFACTION_COLORS = { 1: "var(--danger)", 2: "#D98C2B", 3: "#B7C2D0", 4: "#5FA37A", 5: "var(--success)" };
 
   function statBar(field) {
     const total = field.pos + field.neg + field.unset;
@@ -153,6 +167,9 @@
   async function render(profile) {
     const s = profile.surveyor;
     const kpi = profile.kpi;
+    const onTime = profile.on_time || { completed_with_due: 0, on_time: 0, late: 0, rate: null };
+    const satisfaction = profile.satisfaction || { average: null, count: 0, distribution: {} };
+    const completedByMonth = (profile.completed_by_month || []).slice(-12);
     const types = (await apiFetch("/survey-types")) || [];
     const typeMap = {};
     types.forEach((t) => (typeMap[t.id] = t.name));
@@ -207,6 +224,37 @@
         </div>`;
     }).join("");
 
+    // อัตราปิดงานตรงกำหนด — เทียบวันที่ปิดงานจริง (เปลี่ยนสถานะเป็น "ถอนจ่ายแล้ว") กับ due_date ที่คำนวณไว้ตอนรับเรื่อง
+    // นับเฉพาะเรื่องที่ปิดสำเร็จแล้วและมี due_date เทียบได้เท่านั้น (ดู on_time ฝั่ง backend)
+    const onTimeHtml =
+      onTime.completed_with_due === 0
+        ? `<div class="empty-state">ยังไม่มีงานที่ปิดสำเร็จพร้อมวันครบกำหนดให้เปรียบเทียบ</div>`
+        : `
+        <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:10px; flex-wrap:wrap;">
+          <div style="font-size:34px; font-weight:700; color:${onTime.rate >= 80 ? "var(--success)" : onTime.rate >= 50 ? "var(--warning)" : "var(--danger)"};">${onTime.rate}%</div>
+          <div class="subtitle">ของงานที่ปิดสำเร็จ ${onTime.completed_with_due} เรื่อง (นับเฉพาะเรื่องที่มีวันครบกำหนดเทียบได้)</div>
+        </div>
+        <div class="stat-bar">
+          <span class="seg-pos" style="width:${(onTime.on_time / onTime.completed_with_due) * 100}%;"></span>
+          <span class="seg-neg" style="width:${(onTime.late / onTime.completed_with_due) * 100}%;"></span>
+        </div>
+        <div class="stat-legend">
+          <span><span class="dot" style="background:var(--success);"></span>ตรงกำหนด ${onTime.on_time}</span>
+          <span><span class="dot" style="background:var(--warning);"></span>ล่าช้ากว่ากำหนด ${onTime.late}</span>
+        </div>`;
+
+    // สรุปคะแนนความพึงพอใจจากประชาชน — ใช้อีโมจิเดียวกับหน้ารายการงาน (cases.html) เพื่อความหมายตรงกันทั้งระบบ
+    const satisfactionHtml =
+      satisfaction.count === 0
+        ? `<div class="empty-state">ยังไม่มีประชาชนให้คะแนนความพึงพอใจสำหรับงานของช่างคนนี้</div>`
+        : `
+        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:14px; flex-wrap:wrap;">
+          <div style="font-size:34px; font-weight:700; color:var(--primary);">${satisfaction.average.toFixed(2)} / 5</div>
+          <div style="font-size:28px;">${SATISFACTION_EMOJI[Math.round(satisfaction.average)] || ""}</div>
+          <div class="subtitle">เฉลี่ยจาก ${satisfaction.count} เรื่องที่ประชาชนให้คะแนน</div>
+        </div>
+        <div id="satisfactionDonut"></div>`;
+
     const caseRows = profile.cases.length
       ? profile.cases
           .map(
@@ -247,6 +295,16 @@
       </div>
 
       <div class="card">
+        <h2>อัตราปิดงานตรงกำหนด</h2>
+        ${onTimeHtml}
+      </div>
+
+      <div class="card">
+        <h2>คะแนนความพึงพอใจจากประชาชน</h2>
+        ${satisfactionHtml}
+      </div>
+
+      <div class="card">
         <h2>แยกตามประเภทงาน</h2>
         <div class="table-scroll">
         <table>
@@ -267,6 +325,12 @@
       </div>
 
       <div class="card">
+        <h2>แนวโน้มงานที่ปิดสำเร็จรายเดือน</h2>
+        <div class="subtitle" style="margin-bottom:10px;">นับจากวันที่เปลี่ยนสถานะเป็น "ถอนจ่ายแล้ว" จริง (ต่างจากตาราง "แยกตามเดือนที่รับเรื่อง" ด้านบนซึ่งนับจากวันที่รับเรื่องเข้ามา) แสดงย้อนหลังไม่เกิน 12 เดือนล่าสุด</div>
+        <div id="completedTrendChart"></div>
+      </div>
+
+      <div class="card">
         <h2>เช็คลิสต์ความคืบหน้ารวม</h2>
         <div class="checklist-grid">${checklistHtml}</div>
       </div>
@@ -281,6 +345,18 @@
         </div>
       </div>
     `;
+
+    if (satisfaction.count > 0) {
+      const segments = [5, 4, 3, 2, 1].map((n) => ({
+        label: `${SATISFACTION_EMOJI[n]} ระดับ ${n}`,
+        count: satisfaction.distribution[String(n)] || 0,
+        color: SATISFACTION_COLORS[n],
+      }));
+      renderDonutChart(document.getElementById("satisfactionDonut"), segments, "ครั้งที่ให้คะแนน");
+    }
+
+    const trendRows = completedByMonth.map((m) => ({ label: shortMonthLabel(m.year_month), count: m.completed }));
+    renderMonthlyTrendChart(document.getElementById("completedTrendChart"), trendRows);
 
     if (s.photo_url) {
       const url = await fetchAuthedBlobUrl(s.photo_url);

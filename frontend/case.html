@@ -310,6 +310,7 @@
             <label>ตำแหน่งของที่ดิน</label>
             <input id="p_location_url" type="url" placeholder="https://maps.google.com/?q=..." value="${p.location_url ? p.location_url.replace(/"/g, "&quot;") : ""}">
             ${p.location_url ? `<a href="${p.location_url}" target="_blank" rel="noopener" class="location-link" style="margin-top:6px;">📍 เปิดแผนที่นำทาง</a>` : ""}
+            ${locationCoordNote(p)}
           </div>
           <button type="submit" class="btn btn-outline btn-sm">บันทึกข้อมูลแปลง</button>
         </form>
@@ -324,10 +325,11 @@
         <h2>แผนที่หมุดหลักเขต (Shapefile)</h2>
         <p class="subtitle" style="margin-top:-6px;">
           บันทึกตำแหน่ง GPS ของหมุดหลักเขตแปลงหลัก และแปลงข้างเคียง (ถ้ามี) เพื่อสร้างไฟล์ shapefile พิกัดระบบ
-          Indian 1975 สำหรับนำเข้าโปรแกรม GIS ภายนอก — แผนภาพด้านล่างเป็นผังตำแหน่งสัมพัทธ์ของหมุดเพื่อตรวจสอบ
-          รูปร่างคร่าวๆ ก่อนสร้างไฟล์ ไม่ใช่ภาพถ่ายดาวเทียม/แผนที่ถนนจริง
+          Indian 1975 สำหรับนำเข้าโปรแกรม GIS ภายนอก — แผนภาพด้านล่างซ้อนตำแหน่งหมุดบนแผนที่พื้นหลังจริงเพื่อตรวจสอบ
+          รูปร่างคร่าวๆ ก่อนสร้างไฟล์ เลือกรูปแบบแผนที่พื้นหลังได้ตามความเหมาะสมของพื้นที่
         </p>
-        <div id="markerMapWrap" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-bottom:12px;"></div>
+        <div id="markerBasemapPicker" style="margin-bottom:8px;"></div>
+        <div id="markerMapWrap" style="position:relative; width:100%; height:min(520px, 68vh); min-height:320px; overflow:hidden; border-radius:8px; background:#e2e8f0; margin-bottom:12px; cursor:grab; touch-action:none; user-select:none;"></div>
         <div id="markerLegend" style="margin-bottom:12px; font-size:12.5px;"></div>
         <div id="markerControls"></div>
         <div id="markerListBox" style="margin-top:14px;"></div>
@@ -341,6 +343,24 @@
       </div>
 
       <div class="card">
+        <h2>ความพึงพอใจจากประชาชน</h2>
+        <p class="subtitle" style="margin-top:-6px;">คะแนน 1-5 ที่ประชาชนให้หลังงานเสร็จสิ้น — จากหน้าติดตามงานสาธารณะ (track.html)</p>
+        <div id="satisfactionBox"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+          <div>
+            <h2 style="margin-bottom:2px;">ข้อความจากประชาชน</h2>
+            <p class="subtitle" style="margin:0;">ส่งเข้ามาจากหน้าติดตามงานสาธารณะ (track.html) — ประชาชนไม่ต้องล็อกอิน</p>
+          </div>
+          <div id="messagesSummary" style="flex-shrink:0; padding-top:2px;"></div>
+        </div>
+        <div id="messagesFilterBar" style="display:none; margin:14px 0 2px;"></div>
+        <div id="messagesBox" class="messages-scroll" style="margin-top:10px;"><div class="loading">กำลังโหลด...</div></div>
+      </div>
+
+      <div class="card">
         <h2>ประวัติสถานะ</h2>
         <ul class="timeline" id="historyList"><li class="loading">กำลังโหลด...</li></ul>
       </div>
@@ -349,10 +369,23 @@
     document.getElementById("parcelForm").addEventListener("submit", saveParcel);
     renderChecklist();
     renderActions();
+    renderSatisfactionBox();
     loadPhotos();
     loadMarkers();
     loadHistory();
     loadAssignmentHistory();
+    loadCaseMessages();
+  }
+
+  // สถานะการดึงพิกัดจากลิงก์แผนที่ (ดู extract_coords_from_maps_url ฝั่ง backend/services/gmaps_link.py ที่ทำงาน
+  // อัตโนมัติตอนบันทึกฟอร์มนี้) — บอกผู้ใช้ตรงๆ ว่าดึงได้หรือไม่ เพราะพิกัดนี้เป็นตัวตัดสินว่าเรื่องนี้จะไปปรากฏใน
+  // หน้าแผนที่ช่างรังวัด (field-map.html) หรือไม่ ผู้ใช้จะได้รู้ตัวและลองแก้ (เช่น เปลี่ยนจากลิงก์แบบย่อเป็นแบบเต็ม)
+  function locationCoordNote(p) {
+    if (!p.location_url) return "";
+    if (p.lat !== null && p.lat !== undefined && p.lng !== null && p.lng !== undefined) {
+      return `<div class="subtitle" style="margin-top:4px; font-size:11.5px; color:var(--success);">📍 ดึงพิกัดจากลิงก์แล้ว (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}) — ใช้แสดงหมุดของเรื่องนี้ในหน้าแผนที่ช่างรังวัดได้</div>`;
+    }
+    return `<div class="subtitle" style="margin-top:4px; font-size:11.5px; color:var(--warning);">⚠ ยังดึงพิกัดจากลิงก์นี้อัตโนมัติไม่ได้ (เรื่องนี้จะไม่แสดงในหน้าแผนที่ช่างรังวัด) ลองเปิดลิงก์นี้แล้ววาง URL เต็มจาก address bar แทนลิงก์แบบย่อ</div>`;
   }
 
   async function saveParcel(e) {
@@ -368,6 +401,164 @@
     };
     await apiFetch("/survey-cases/" + caseId + "/parcel", { method: "PATCH", body: JSON.stringify(payload) });
     await loadCase();
+  }
+
+  // ---------------------------------------------------------------------
+  // ความพึงพอใจ + ข้อความจากประชาชน (ดูฝั่งสาธารณะที่ frontend/track.html และ backend/blueprints/public_track.py)
+  // ---------------------------------------------------------------------
+  const SATISFACTION_EMOJI = { 1: "😞", 2: "🙁", 3: "😐", 4: "🙂", 5: "😄" };
+
+  function canResolveMessages() {
+    return ["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(currentUser.role);
+  }
+
+  // ตอบกลับข้อความได้ทั้งบทบาทผู้บริหาร/หัวหน้าเดิม บวกช่างรังวัดเจ้าของเรื่อง (เห็นหน้านี้ได้แปลว่าเป็นเจ้าของเรื่องอยู่
+  // แล้ว เพราะ GET /survey-cases/<id> กรองด้วย scope_case_filter ฝั่ง backend) — resolve แบบไม่ตอบข้อความยังจำกัดแค่
+  // บทบาทผู้บริหาร/หัวหน้าเหมือนเดิม ไม่ได้ขยายให้ช่างรังวัด
+  function canReplyToMessages() {
+    return canResolveMessages() || currentUser.role === "surveyor";
+  }
+
+  function renderSatisfactionBox() {
+    const box = document.getElementById("satisfactionBox");
+    const r = currentCase.satisfaction_rating;
+    if (!r) {
+      box.innerHTML = `<div class="subtitle" style="margin:0;">ยังไม่มีการให้คะแนนความพึงพอใจ (แสดงให้ประชาชนให้คะแนนได้หลังงานเสร็จสิ้น)</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:28px; line-height:1;">${SATISFACTION_EMOJI[r.rating] || "🙂"}</span>
+        <div>
+          <div style="font-weight:600;">คะแนนความพึงพอใจ: ${r.rating} / 5</div>
+          ${r.comment ? `<div class="subtitle" style="margin:2px 0 0;">"${r.comment.replace(/</g, "&lt;")}"</div>` : ""}
+          <div class="subtitle" style="margin:2px 0 0; font-size:11px;">${fmtDate(r.updated_at || r.created_at)}</div>
+        </div>
+      </div>`;
+  }
+
+  // เก็บข้อความทั้งหมดของเรื่องนี้ไว้ในตัวแปรฝั่งหน้าเว็บ (ดึงจาก API แค่ครั้งเดียวตอนโหลด/หลังมีการเปลี่ยนแปลง)
+  // เพื่อให้ตัวกรอง "ทั้งหมด / รอดำเนินการ" สลับได้ทันทีโดยไม่ต้องเรียก API ซ้ำ — ส่วนสรุปจำนวน (messagesSummary)
+  // และรายการที่แสดงจริง (messagesBox) จึงคำนวณจากตัวแปรนี้เสมอ
+  let allCaseMessages = [];
+  let messagesFilter = "all"; // "all" | "pending" — ใช้กรองตอนเรื่องมีการโต้ตอบสะสมมาก จะได้โฟกัสเฉพาะที่ยังค้างได้ง่าย
+
+  async function loadCaseMessages() {
+    allCaseMessages = (await apiFetch("/survey-cases/" + caseId + "/messages")) || [];
+    renderMessagesSummary();
+    renderCaseMessages();
+  }
+
+  function renderMessagesSummary() {
+    const summaryBox = document.getElementById("messagesSummary");
+    const filterBar = document.getElementById("messagesFilterBar");
+    const total = allCaseMessages.length;
+    if (!total) {
+      summaryBox.innerHTML = "";
+      filterBar.style.display = "none";
+      return;
+    }
+    const pending = allCaseMessages.filter((m) => m.status !== "RESOLVED").length;
+    summaryBox.innerHTML = pending > 0
+      ? `<span class="messages-summary-badge">⏳ รอดำเนินการ ${pending} จาก ${total} ข้อความ</span>`
+      : `<span class="messages-summary-badge all-done">✓ ดำเนินการครบแล้วทั้ง ${total} ข้อความ</span>`;
+
+    // แสดงตัวกรองเฉพาะตอนมีข้อความสะสมพอสมควร — เรื่องที่มีแค่ 1-3 ข้อความไม่จำเป็นต้องกรองก็ดูง่ายอยู่แล้ว
+    if (total <= 3) {
+      filterBar.style.display = "none";
+      messagesFilter = "all";
+      return;
+    }
+    filterBar.style.display = "flex";
+    filterBar.className = "msg-filter-bar";
+    filterBar.innerHTML = `
+      <button type="button" class="msg-filter-btn ${messagesFilter === "all" ? "active" : ""}" onclick="setMessagesFilter('all')">ทั้งหมด (${total})</button>
+      <button type="button" class="msg-filter-btn ${messagesFilter === "pending" ? "active" : ""}" onclick="setMessagesFilter('pending')">รอดำเนินการ (${pending})</button>
+    `;
+  }
+
+  function setMessagesFilter(filter) {
+    messagesFilter = filter;
+    renderMessagesSummary();
+    renderCaseMessages();
+  }
+
+  function renderCaseMessages() {
+    const box = document.getElementById("messagesBox");
+    if (!allCaseMessages.length) {
+      box.innerHTML = `<div class="subtitle" style="margin:0;">ยังไม่มีข้อความจากประชาชน</div>`;
+      return;
+    }
+    const list = messagesFilter === "pending" ? allCaseMessages.filter((m) => m.status !== "RESOLVED") : allCaseMessages;
+    if (!list.length) {
+      box.innerHTML = `<div class="subtitle" style="margin:0;">ไม่มีข้อความที่รอดำเนินการ — ดำเนินการครบทุกรายการแล้ว 🎉</div>`;
+      return;
+    }
+    // เรียงจากใหม่ไปเก่าตามที่ API ส่งมา (ORDER BY created_at DESC) — ข้อความล่าสุดอยู่บนสุด เห็นความเคลื่อนไหวใหม่
+    // ได้ทันทีโดยไม่ต้องเลื่อนหา แม้เรื่องนี้จะมีการโต้ตอบสะสมมาแล้วหลายรอบก็ตาม
+    box.innerHTML = list
+      .map((m) => {
+        const resolved = m.status === "RESOLVED";
+        const hasReply = !!(m.reply_text && m.reply_text.trim());
+        return `
+        <div class="msg-item">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
+            <div style="font-size:13.5px; white-space:pre-wrap;">${m.description.replace(/</g, "&lt;")}</div>
+            <span class="badge" style="${resolved ? "background:#DCF3E4; color:var(--success);" : "background:var(--gold-light); color:var(--warning);"} flex-shrink:0;">
+              ${resolved ? "ดำเนินการแล้ว" : "รอดำเนินการ"}
+            </span>
+          </div>
+          <div class="subtitle" style="margin-top:4px; font-size:11px;">
+            ${fmtDate(m.created_at)}${m.citizen_contact ? " · ติดต่อกลับ: " + m.citizen_contact : ""}
+            ${resolved && !hasReply && m.resolved_by_name ? " · ดำเนินการโดย " + m.resolved_by_name : ""}
+          </div>
+          ${hasReply ? `
+          <div style="margin-top:8px; padding:8px 10px; background:#F4F8FC; border-radius:8px;">
+            <div style="font-size:11px; font-weight:600; color:var(--primary);">คำตอบจากเจ้าหน้าที่${m.replied_by_name ? " (" + m.replied_by_name + ")" : ""}</div>
+            <div style="font-size:13.5px; white-space:pre-wrap; margin-top:2px;">${m.reply_text.replace(/</g, "&lt;")}</div>
+            <div class="subtitle" style="margin-top:2px; font-size:11px;">${fmtDate(m.replied_at)}</div>
+          </div>` : ""}
+          ${!resolved && canReplyToMessages() ? `
+          <div style="margin-top:8px;">
+            <textarea id="reply-text-${m.id}" rows="2" placeholder="พิมพ์คำตอบให้ประชาชนเห็นในหน้าติดตามงาน..." style="width:100%; font-size:13.5px;"></textarea>
+            <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary btn-sm" onclick="replyCaseMessage('${m.id}')">✉ ส่งคำตอบ</button>
+              ${canResolveMessages() ? `<button type="button" class="btn btn-outline btn-sm" onclick="resolveCaseMessage('${m.id}')">✓ ทำเครื่องหมายว่าดำเนินการแล้ว (ไม่ตอบข้อความ)</button>` : ""}
+            </div>
+            <div id="reply-error-${m.id}" class="error-text" style="display:none; margin-top:4px; font-size:12px;"></div>
+          </div>` : ""}
+        </div>`;
+      })
+      .join("");
+  }
+
+  async function resolveCaseMessage(messageId) {
+    await apiFetch("/survey-cases/messages/" + messageId + "/resolve", { method: "PATCH" });
+    await loadCaseMessages();
+    await loadCase();
+  }
+
+  async function replyCaseMessage(messageId) {
+    const textEl = document.getElementById("reply-text-" + messageId);
+    const errBox = document.getElementById("reply-error-" + messageId);
+    const reply = textEl.value.trim();
+    errBox.style.display = "none";
+    if (!reply) {
+      errBox.textContent = "กรุณาพิมพ์ข้อความตอบกลับก่อนส่ง";
+      errBox.style.display = "block";
+      return;
+    }
+    try {
+      await apiFetch("/survey-cases/messages/" + messageId + "/reply", {
+        method: "PATCH",
+        body: JSON.stringify({ reply }),
+      });
+      await loadCaseMessages();
+      await loadCase();
+    } catch (e) {
+      errBox.textContent = e.message || "ส่งคำตอบไม่สำเร็จ กรุณาลองใหม่";
+      errBox.style.display = "block";
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -602,12 +793,60 @@
   let markersData = [];
   const MARKER_GROUP_COLORS = ["#dc2626", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777"];
 
+  // รูปแบบแผนที่พื้นหลังให้เลือก — ทุกแหล่งเป็นบริการ tile สาธารณะที่ใช้ได้ฟรีไม่ต้องขอ API key เหมาะกับต้นแบบ/
+  // พรีเซนต์ (เช่นเดียวกับ OpenStreetMap เดิม) urlTemplate คืนตำแหน่ง tile จาก (zoom, tileX, tileY) — ผู้ให้บริการ
+  // แต่ละรายอาจเรียงลำดับพารามิเตอร์ในเส้นทาง URL ต่างกัน (เช่น Esri ใช้ z/y/x ไม่ใช่ z/x/y แบบ OSM) จึงแยกฟังก์ชัน
+  // ต่อผู้ให้บริการแทนที่จะใช้ template string เดียวร่วมกัน
+  const MARKER_BASEMAPS = {
+    street: {
+      label: "🗺️ แผนที่ถนน",
+      maxZoom: 19,
+      urlTemplate: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+      attributionHtml: `© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors`,
+    },
+    satellite: {
+      label: "🛰️ ภาพถ่ายดาวเทียม",
+      maxZoom: 19,
+      urlTemplate: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+      attributionHtml: `© <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics`,
+    },
+    terrain: {
+      label: "⛰️ ภูมิประเทศ",
+      maxZoom: 17,
+      urlTemplate: (z, x, y) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
+      attributionHtml: `© <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a> (data: OpenStreetMap/SRTM)`,
+    },
+  };
+  // ตัวเลือกแผนที่พื้นหลังที่ผู้ใช้เลือกไว้ล่าสุด (ต่อการเปิดหน้านี้ 1 ครั้ง — ไม่บันทึกถาวร)
+  let currentMarkerBasemap = "street";
+
+  function renderBasemapPicker() {
+    const box = document.getElementById("markerBasemapPicker");
+    if (!box) return;
+    box.innerHTML = Object.entries(MARKER_BASEMAPS)
+      .map(([key, b]) => {
+        const active = key === currentMarkerBasemap;
+        return `<button type="button" class="btn ${active ? "btn-primary" : "btn-outline"} btn-sm"
+          style="margin-right:8px; margin-bottom:6px;" onclick="setMarkerBasemap('${key}')">${b.label}</button>`;
+      })
+      .join("");
+  }
+
+  function setMarkerBasemap(key) {
+    if (!MARKER_BASEMAPS[key] || key === currentMarkerBasemap) return;
+    currentMarkerBasemap = key;
+    if (mapView) mapView.zoom = Math.min(mapView.zoom, MARKER_BASEMAPS[key].maxZoom); // คงมุมมองเดิม แค่กันซูมเกินเพดานของผู้ให้บริการใหม่
+    renderBasemapPicker();
+    renderMarkerMap();
+  }
+
   function canAddMarkers() {
     return ["system_admin", "administrator", "province_admin", "supervisor", "surveyor"].includes(currentUser.role);
   }
 
   async function loadMarkers() {
     markersData = (await apiFetch("/survey-cases/" + caseId + "/markers")) || [];
+    mapView = null; // ข้อมูลหมุดเปลี่ยน (โหลดครั้งแรก/เพิ่ม/ลบ/นำเข้าใหม่) -> จัดกรอบมุมมองแผนที่ให้พอดีกับหมุดทั้งหมดอีกครั้ง
     renderMarkerSection();
   }
 
@@ -620,13 +859,17 @@
   }
 
   function renderMarkerSection() {
+    renderBasemapPicker();
     renderMarkerMap();
     renderMarkerControls();
     renderMarkerList();
   }
 
   // สูตร Web Mercator มาตรฐาน (เหมือนที่ Leaflet/Google Maps/OpenLayers ใช้ภายใน) — แปลง lat/lng องศา เป็นพิกเซล
-  // สัมบูรณ์ (global pixel) ของโลกทั้งใบที่ระดับซูมที่กำหนด (โลกทั้งใบกว้าง/สูง 256 * 2^zoom พิกเซลเสมอ)
+  // สัมบูรณ์ (global pixel) ของโลกทั้งใบที่ระดับซูมที่กำหนด (โลกทั้งใบกว้าง/สูง 256 * 2^zoom พิกเซลเสมอ) และฟังก์ชัน
+  // ผกผัน (global px -> lon/lat) ที่ใช้ตอนซูมเข้าที่ตำแหน่งเคอร์เซอร์/จุดแตะ และตอนลากแผนที่ (คำนวณจุดศูนย์กลางใหม่
+  // จากระยะที่ลาก) — เขียนเองล้วนๆ ไม่พึ่งไลบรารีแผนที่จาก CDN (เช่น Leaflet) ตามหลักการเดิมของระบบนี้ที่ไม่พึ่ง
+  // ไลบรารีภายนอกแม้แต่ตัวเดียว — ดูหลักการเดียวกันใน js/charts.js
   const MERCATOR_TILE_SIZE = 256;
   function lonToGlobalPx(lonDeg, zoom) {
     return ((lonDeg + 180) / 360) * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
@@ -636,48 +879,73 @@
     const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2;
     return y * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
   }
+  function globalPxToLon(px, zoom) {
+    return (px / (MERCATOR_TILE_SIZE * Math.pow(2, zoom))) * 360 - 180;
+  }
+  function globalPxToLat(py, zoom) {
+    const n = Math.PI - (2 * Math.PI * py) / (MERCATOR_TILE_SIZE * Math.pow(2, zoom));
+    return (180 / Math.PI) * Math.atan(Math.sinh(n));
+  }
 
-  function renderMarkerMap() {
+  const MAP_MIN_ZOOM = 3;
+
+  // มุมมองแผนที่ปัจจุบัน (ซูม + จุดศูนย์กลาง) — คงอยู่ข้ามการ re-render ระหว่างที่ผู้ใช้ลาก/ซูมเอง (ไม่รีเซ็ตทุก
+  // ครั้งที่วาดใหม่) แต่จะถูกล้าง (null) เมื่อข้อมูลหมุดเปลี่ยนจริง (ดู loadMarkers) เพื่อจัดกรอบให้พอดีกับหมุดอีกครั้ง
+  let mapView = null;
+
+  function fitMapToMarkers() {
     const wrap = document.getElementById("markerMapWrap");
-    const legend = document.getElementById("markerLegend");
-    if (!markersData.length) {
-      wrap.style.height = "";
-      wrap.innerHTML = `<div class="subtitle" style="margin:0; padding:20px 0; text-align:center;">ยังไม่มีหมุดที่บันทึกไว้</div>`;
-      legend.innerHTML = "";
-      return;
-    }
-
-    const size = 420; // ผังสี่เหลี่ยมจัตุรัส (px)
-    const pad = 30;   // ระยะขอบกันหมุดชิดขอบเกินไป
+    const width = (wrap && wrap.clientWidth) || 800;
+    const height = (wrap && wrap.clientHeight) || 480;
+    const pad = 40; // ระยะขอบกันหมุดชิดขอบเกินไป
+    const basemap = MARKER_BASEMAPS[currentMarkerBasemap];
 
     const lats = markersData.map((m) => m.geo_lat);
     const lngs = markersData.map((m) => m.geo_lng);
     const latMin = Math.min(...lats), latMax = Math.max(...lats);
     const lngMin = Math.min(...lngs), lngMax = Math.max(...lngs);
 
-    // เลือกระดับซูมสูงสุดที่ทำให้หมุดทุกจุดยังพอดีอยู่ในกรอบ (พร้อมระยะขอบ pad) — ยิ่งซูมมากยิ่งเห็นรายละเอียด
-    // ถนน/อาคารชัดขึ้น เหมาะกับแปลงที่ดินที่มักกว้างแค่ระดับสิบ/ร้อยเมตร (OpenStreetMap รองรับสูงสุดราว zoom 19)
-    let zoom = 19;
-    for (; zoom >= 3; zoom--) {
+    // เลือกระดับซูมสูงสุดที่ทำให้หมุดทุกจุดยังพอดีอยู่ในกรอบ (พร้อมระยะขอบ pad)
+    let zoom = basemap.maxZoom;
+    for (; zoom >= MAP_MIN_ZOOM; zoom--) {
       const w = lonToGlobalPx(lngMax, zoom) - lonToGlobalPx(lngMin, zoom);
       const h = latToGlobalPx(latMin, zoom) - latToGlobalPx(latMax, zoom); // lat มาก -> px น้อย (แกน y กลับด้าน)
-      if (w <= size - 2 * pad && h <= size - 2 * pad) break;
+      if (w <= width - 2 * pad && h <= height - 2 * pad) break;
     }
 
-    const centerOriginX = lonToGlobalPx((lngMin + lngMax) / 2, zoom) - size / 2;
-    const centerOriginY = latToGlobalPx((latMin + latMax) / 2, zoom) - size / 2;
+    mapView = { zoom, centerLng: (lngMin + lngMax) / 2, centerLat: (latMin + latMax) / 2 };
+  }
+
+  function renderMarkerMap() {
+    const wrap = document.getElementById("markerMapWrap");
+    const legend = document.getElementById("markerLegend");
+    if (!markersData.length) {
+      wrap.innerHTML = `<div class="subtitle" style="margin:0; height:100%; display:flex; align-items:center; justify-content:center; text-align:center;">ยังไม่มีหมุดที่บันทึกไว้</div>`;
+      legend.innerHTML = "";
+      return;
+    }
+
+    if (!mapView) fitMapToMarkers();
+
+    const width = wrap.clientWidth || 800;
+    const height = wrap.clientHeight || 480;
+    const basemap = MARKER_BASEMAPS[currentMarkerBasemap];
+    const zoom = Math.min(mapView.zoom, basemap.maxZoom); // เผื่อสลับมาจากผู้ให้บริการที่ซูมได้ลึกกว่า
+
+    const centerOriginX = lonToGlobalPx(mapView.centerLng, zoom) - width / 2;
+    const centerOriginY = latToGlobalPx(mapView.centerLat, zoom) - height / 2;
     const toPx = (lat, lng) => ({
       sx: lonToGlobalPx(lng, zoom) - centerOriginX,
       sy: latToGlobalPx(lat, zoom) - centerOriginY,
     });
 
-    // โมเสกภาพพื้นแผนที่จริงจาก OpenStreetMap — ครอบคลุมเฉพาะ tile ที่ตกอยู่ในกรอบขนาด size×size เท่านั้น
-    // (ด้วยขนาดกรอบคงที่ จำนวน tile ที่ต้องโหลดจะอยู่ราวๆ 3×3 เท่านั้นไม่ว่าจะซูมระดับไหนก็ตาม)
+    // โมเสกภาพพื้นแผนที่จริง ครอบคลุมเฉพาะ tile ที่ตกอยู่ในกรอบขนาด width×height เท่านั้น (จำนวน tile ที่ต้องโหลด
+    // จะแปรผันตามขนาดกรอบจริง ไม่ใช่ค่าคงที่แบบเดิมอีกต่อไป เพราะตอนนี้กรอบเป็นความกว้างเต็มการ์ด/สูงคงที่)
     const tilesPerSide = Math.pow(2, zoom);
     const firstTileX = Math.floor(centerOriginX / MERCATOR_TILE_SIZE);
-    const lastTileX = Math.floor((centerOriginX + size) / MERCATOR_TILE_SIZE);
+    const lastTileX = Math.floor((centerOriginX + width) / MERCATOR_TILE_SIZE);
     const firstTileY = Math.floor(centerOriginY / MERCATOR_TILE_SIZE);
-    const lastTileY = Math.floor((centerOriginY + size) / MERCATOR_TILE_SIZE);
+    const lastTileY = Math.floor((centerOriginY + height) / MERCATOR_TILE_SIZE);
     let tilesHtml = "";
     for (let tx = firstTileX; tx <= lastTileX; tx++) {
       const wrappedX = ((tx % tilesPerSide) + tilesPerSide) % tilesPerSide; // wrap รอบโลกตามยาว (ลองจิจูด)
@@ -685,7 +953,7 @@
         if (ty < 0 || ty >= tilesPerSide) continue; // ละติจูดไม่ wrap (เหนือ/ใต้สุดของแผนที่)
         const left = tx * MERCATOR_TILE_SIZE - centerOriginX;
         const top = ty * MERCATOR_TILE_SIZE - centerOriginY;
-        tilesHtml += `<img src="https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png" loading="lazy" alt=""
+        tilesHtml += `<img src="${basemap.urlTemplate(zoom, wrappedX, ty)}" loading="lazy" alt=""
           style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;" />`;
       }
     }
@@ -697,7 +965,7 @@
     });
     const groupNames = Object.keys(groups);
 
-    let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"
+    let svg = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"
       style="position:absolute; left:0; top:0; pointer-events:none;">`;
     groupNames.forEach((name, gi) => {
       const color = name === "แปลงหลัก" ? "#16a34a" : MARKER_GROUP_COLORS[gi % MARKER_GROUP_COLORS.length];
@@ -715,10 +983,26 @@
     });
     svg += `</svg>`;
 
-    wrap.style.height = size + "px";
-    wrap.style.padding = "0";
-    wrap.style.overflow = "hidden";
-    wrap.innerHTML = `<div style="position:relative; width:${size}px; height:${size}px; margin:0 auto; overflow:hidden; border-radius:6px; background:#e2e8f0;">${tilesHtml}${svg}</div>`;
+    const zoomBtn = (label, delta, title) =>
+      `<button type="button" title="${title}" onclick="zoomMarkerMap(${delta})"
+        style="width:32px; height:32px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#1e293b;
+        font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.15);">${label}</button>`;
+
+    wrap.innerHTML = `
+      <div id="markerMapLayer" style="position:absolute; left:0; top:0; width:${width}px; height:${height}px;">${tilesHtml}${svg}</div>
+      <div style="position:absolute; right:10px; top:10px; display:flex; flex-direction:column; gap:6px; z-index:5;">
+        ${zoomBtn("+", 1, "ซูมเข้า")}
+        ${zoomBtn("−", -1, "ซูมออก")}
+        <button type="button" title="จัดกึ่งกลางให้พอดีกับหมุดทั้งหมด" onclick="resetMarkerMapView()"
+          style="width:32px; height:32px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#1e293b;
+          font-size:14px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🎯</button>
+      </div>
+      <div style="position:absolute; left:10px; bottom:8px; z-index:5; background:rgba(255,255,255,0.85);
+        padding:3px 8px; border-radius:5px; font-size:10.5px; color:#334155; pointer-events:none;">
+        🖐️ ลากเพื่อเลื่อนแผนที่ · เลื่อนล้อเมาส์/ปุ่ม +/− เพื่อซูม
+      </div>`;
+
+    attachMarkerMapInteractions(wrap, width, height);
 
     legend.innerHTML =
       groupNames
@@ -727,8 +1011,109 @@
           return `<span style="display:inline-flex; align-items:center; gap:5px; margin-right:14px;"><span style="width:10px; height:10px; border-radius:50%; background:${color}; display:inline-block;"></span>${name} (${groups[name].length} หมุด)</span>`;
         })
         .join("") +
-      `<div class="subtitle" style="margin-top:6px; font-size:10.5px;">แผนที่พื้นฐาน: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ต้นแบบสำหรับพรีเซนต์ — งานจริงแนะนำเปลี่ยนไปใช้ LandsMaps ของกรมที่ดิน) ต้องมีอินเทอร์เน็ตเพื่อโหลดภาพแผนที่พื้นหลัง</div>`;
+      `<div class="subtitle" style="margin-top:6px; font-size:10.5px;">แผนที่พื้นฐาน: ${basemap.attributionHtml} (ต้นแบบสำหรับพรีเซนต์ — งานจริงแนะนำเปลี่ยนไปใช้ LandsMaps ของกรมที่ดิน) ต้องมีอินเทอร์เน็ตเพื่อโหลดภาพแผนที่พื้นหลัง</div>`;
   }
+
+  function zoomMarkerMap(delta) {
+    if (!mapView) return;
+    const basemap = MARKER_BASEMAPS[currentMarkerBasemap];
+    const newZoom = Math.min(basemap.maxZoom, Math.max(MAP_MIN_ZOOM, mapView.zoom + delta));
+    if (newZoom === mapView.zoom) return;
+    mapView.zoom = newZoom; // ซูมโดยยึดจุดศูนย์กลางเดิม (centerLng/centerLat ไม่เปลี่ยน)
+    renderMarkerMap();
+  }
+
+  // ซูมเข้า/ออกโดยยึดตำแหน่งเคอร์เซอร์/จุดแตะเป็นจุดหมุน (เหมือนพฤติกรรมแผนที่ทั่วไป) — ใช้กับล้อเมาส์และดับเบิลคลิก
+  function zoomMarkerMapAt(delta, clientX, clientY, wrap) {
+    if (!mapView) return;
+    const basemap = MARKER_BASEMAPS[currentMarkerBasemap];
+    const newZoom = Math.min(basemap.maxZoom, Math.max(MAP_MIN_ZOOM, mapView.zoom + delta));
+    if (newZoom === mapView.zoom) return;
+    const rect = wrap.getBoundingClientRect();
+    const px = clientX - rect.left, py = clientY - rect.top;
+    const width = wrap.clientWidth, height = wrap.clientHeight;
+    const oldZoom = mapView.zoom;
+    const originX = lonToGlobalPx(mapView.centerLng, oldZoom) - width / 2;
+    const originY = latToGlobalPx(mapView.centerLat, oldZoom) - height / 2;
+    const lon = globalPxToLon(originX + px, oldZoom);
+    const lat = globalPxToLat(originY + py, oldZoom);
+
+    mapView.zoom = newZoom;
+    const newOriginX = lonToGlobalPx(lon, newZoom) - px;
+    const newOriginY = latToGlobalPx(lat, newZoom) - py;
+    mapView.centerLng = globalPxToLon(newOriginX + width / 2, newZoom);
+    mapView.centerLat = globalPxToLat(newOriginY + height / 2, newZoom);
+    renderMarkerMap();
+  }
+
+  function resetMarkerMapView() {
+    mapView = null;
+    renderMarkerMap();
+  }
+
+  // ลากแผนที่ (เมาส์/นิ้ว) — ระหว่างลากใช้ CSS transform เลื่อนเลเยอร์ทั้งกล่อง (เบา ไม่ต้องโหลด tile ใหม่ทุกพิกเซล)
+  // พอปล่อยนิ้ว/ปุ่มเมาส์แล้วค่อยคำนวณจุดศูนย์กลางใหม่และวาดใหม่จริง (ถึงตอนนั้นค่อยโหลด tile ที่ขอบเพิ่ม)
+  function attachMarkerMapInteractions(wrap, width, height) {
+    const layer = document.getElementById("markerMapLayer");
+    if (!layer) return;
+
+    function beginDrag(startClientX, startClientY, moveEventName, endEventName, getPoint) {
+      let moved = false;
+      wrap.style.cursor = "grabbing";
+
+      function onMove(e) {
+        const { x, y } = getPoint(e);
+        const dx = x - startClientX, dy = y - startClientY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        layer.style.transform = `translate(${dx}px, ${dy}px)`;
+        if (e.cancelable) e.preventDefault();
+      }
+      function onEnd(e) {
+        document.removeEventListener(moveEventName, onMove);
+        document.removeEventListener(endEventName, onEnd);
+        wrap.style.cursor = "grab";
+        layer.style.transform = "";
+        const point = e.changedTouches ? { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY } : getPoint(e);
+        const dx = point.x - startClientX, dy = point.y - startClientY;
+        if (moved && mapView) {
+          const zoom = mapView.zoom;
+          const originX = lonToGlobalPx(mapView.centerLng, zoom) - width / 2 - dx;
+          const originY = latToGlobalPx(mapView.centerLat, zoom) - height / 2 - dy;
+          mapView.centerLng = globalPxToLon(originX + width / 2, zoom);
+          mapView.centerLat = globalPxToLat(originY + height / 2, zoom);
+          renderMarkerMap();
+        }
+      }
+      document.addEventListener(moveEventName, onMove, { passive: false });
+      document.addEventListener(endEventName, onEnd);
+    }
+
+    wrap.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      beginDrag(e.clientX, e.clientY, "mousemove", "mouseup", (ev) => ({ x: ev.clientX, y: ev.clientY }));
+    };
+    wrap.ontouchstart = (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      beginDrag(t.clientX, t.clientY, "touchmove", "touchend", (ev) => ({ x: ev.touches[0].clientX, y: ev.touches[0].clientY }));
+    };
+    wrap.onwheel = (e) => {
+      e.preventDefault();
+      zoomMarkerMapAt(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY, wrap);
+    };
+    wrap.ondblclick = (e) => {
+      zoomMarkerMapAt(1, e.clientX, e.clientY, wrap);
+    };
+  }
+
+  // จอกว้างขึ้น/แคบลง (พลิกมือถือ, ปรับขนาดหน้าต่าง) -> วาดแผนที่ใหม่ตามขนาดกรอบจริง (ไม่จัดกรอบใหม่ คงมุมมองเดิมไว้)
+  let markerMapResizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (!markersData.length || !document.getElementById("markerMapWrap")) return;
+    clearTimeout(markerMapResizeTimer);
+    markerMapResizeTimer = setTimeout(renderMarkerMap, 200);
+  });
 
   function renderMarkerControls() {
     const box = document.getElementById("markerControls");

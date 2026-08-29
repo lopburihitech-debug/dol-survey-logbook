@@ -244,6 +244,67 @@ a { color: var(--primary); }
   .user-menu .dropdown-menu a svg, .user-menu .dropdown-menu button svg { color: inherit; }
 }
 
+/* ปุ่มลอย "แชทบอทเจ้าหน้าที่" — แสดงทุกหน้าที่ล็อกอินแล้ว (สร้างจาก js/api.js::renderStaffChatFab() ต่อท้าย
+   renderTopbar() จึงไม่ต้องแก้ทีละหน้า) กดแล้วเปิดระบบแชทบอทของกรมที่ดินเองที่ https://bi.dol.go.th/chatbot/login
+   ในแท็บใหม่ — ใช้โทนฟ้า/ฟ้าอมเขียวแยกจากปุ่ม "คุยกับเจ้าหน้าที่" ของประชาชน (โทนส้ม ใน track.html) ให้ไม่สับสนกัน
+   ว่าเป็นคนละฟีเจอร์ วางไว้ต่ำกว่า .modal-backdrop (z-index 50) เพื่อไม่ให้ลอยทับหน้าต่าง modal ที่เปิดอยู่ */
+#staffChatFabWrap {
+  position: fixed; right: 20px; bottom: 20px; z-index: 35;
+  display: flex; align-items: center; gap: 10px;
+}
+#staffChatFabLabel {
+  background: #0891B2; color: #fff; font-size: 13px; font-weight: 700; padding: 10px 16px;
+  border-radius: 999px; box-shadow: var(--shadow-md); cursor: pointer; white-space: nowrap;
+  animation: staffFabLabelIn 0.4s ease-out;
+}
+#staffChatFabLabel:hover { background: #0A6E88; }
+#staffChatFab {
+  position: relative; flex-shrink: 0;
+  width: 58px; height: 58px; border-radius: 50%; border: 3px solid #0891B2; cursor: pointer;
+  background: #fff; padding: 0;
+  box-shadow: var(--shadow-md);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s;
+  animation: staffFabPop 0.5s ease-out;
+}
+#staffChatFab:hover { transform: scale(1.07); }
+#staffChatFab:active { transform: scale(0.94); }
+#staffChatFab img { width: 40px; height: 40px; object-fit: contain; pointer-events: none; }
+#staffChatFab .staff-chat-fab-ring {
+  position: absolute; inset: -3px; border-radius: 50%; border: 3px solid #0891B2;
+  animation: staffFabPing 2.4s cubic-bezier(0,0,0.2,1) infinite; pointer-events: none;
+}
+/* กล่องยืนยันก่อนออกจากระบบ — กดไอคอน/ป้ายแล้วไม่พาไปที่ลิงก์ทันที แต่ถามให้เลือกก่อน "เปิด" (ไปตามลิงก์
+   ในแท็บใหม่) หรือ "ปิด" (ยกเลิก ปิดกล่องนี้กลับไปเหมือนเดิม) กันพลาดกดโดนแล้วหลุดออกจากระบบไปที่อื่นโดยไม่ตั้งใจ */
+.staff-chat-fab-confirm {
+  display: none;
+  position: absolute; bottom: calc(100% + 14px); right: 0;
+  width: 230px; background: #fff; border-radius: 12px; box-shadow: var(--shadow-md);
+  padding: 14px;
+}
+.staff-chat-fab-confirm.open { display: block; animation: staffFabConfirmIn 0.18s ease-out; }
+.staff-chat-fab-confirm::after {
+  content: ""; position: absolute; top: 100%; right: 24px;
+  border: 7px solid transparent; border-top-color: #fff;
+}
+.staff-chat-fab-confirm-text { font-size: 13px; color: var(--text); line-height: 1.5; margin-bottom: 6px; }
+.staff-chat-fab-confirm-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+.staff-chat-fab-confirm-actions { display: flex; gap: 8px; }
+.staff-chat-fab-confirm-actions button {
+  flex: 1; border: none; border-radius: 8px; padding: 8px 0; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+#staffChatFabOpenBtn { background: #0891B2; color: #fff; }
+#staffChatFabOpenBtn:hover { background: #0A6E88; }
+#staffChatFabCloseBtn { background: #EEF2F1; color: var(--text-muted); }
+#staffChatFabCloseBtn:hover { background: #E2E8E6; }
+@keyframes staffFabLabelIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes staffFabPop { 0% { transform: scale(0); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes staffFabPing { 0% { transform: scale(1); opacity: 0.6; } 75%, 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes staffFabConfirmIn { from { opacity: 0; transform: translateY(6px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 480px) { #staffChatFabLabel { display: none; } } /* จอแคบมาก: เหลือแค่ไอคอนกันบังเนื้อหา */
+@media print { #staffChatFabWrap { display: none !important; } }
+
 .card {
   background: white;
   border: 1px solid #E7EEE9;
@@ -490,6 +551,26 @@ input:focus, select:focus, textarea:focus {
   background: var(--primary);
 }
 .timeline .ts { color: var(--text-muted); font-size: 11.5px; }
+
+/* ข้อความจากประชาชน (case.html) — จำกัดความสูงด้วย scroll แทนปล่อยยาวไม่จำกัด เผื่อเรื่องหนึ่งมีการโต้ตอบกัน
+   หลายรอบ จะได้ไม่ดันส่วนอื่นของหน้า (ประวัติสถานะ ฯลฯ) ให้ต้องเลื่อนหาไกลเกินไป */
+.messages-summary-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: var(--gold-light); color: var(--warning); white-space: nowrap;
+}
+.messages-summary-badge.all-done { background: #DCF3E4; color: var(--success); }
+.msg-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+.msg-filter-btn {
+  border: 1px solid #CBD5C9; background: white; color: var(--text-muted); font-size: 12.5px;
+  padding: 5px 12px; border-radius: 999px; cursor: pointer; font-family: inherit;
+}
+.msg-filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+.msg-filter-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+.messages-scroll { max-height: 480px; overflow-y: auto; padding-right: 4px; }
+.msg-item {
+  padding: 12px; margin-bottom: 10px; background: #FAFCFB; border: 1px solid #EEF2EF; border-radius: 8px;
+}
+.msg-item:last-child { margin-bottom: 0; }
 
 .action-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
@@ -742,3 +823,22 @@ input:focus, select:focus, textarea:focus {
 
 .track-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
 .track-case-code { font-family: "Courier New", monospace; font-weight: 700; font-size: 15px; color: var(--primary); letter-spacing: 0.5px; }
+
+/* คะแนนความพึงพอใจแบบหน้ายิ้ม 5 ระดับ (แสดงในหน้าติดตามงานเมื่องานเสร็จสิ้นแล้ว) */
+.smiley-rating { display: flex; justify-content: space-between; gap: 6px; margin: 12px 0 4px; }
+.smiley-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 2px; border: 2px solid transparent; border-radius: 10px; background: #f8fafc;
+  cursor: pointer; font-size: 24px; transition: transform .15s, border-color .15s, background .15s;
+}
+.smiley-btn:hover { transform: translateY(-2px); background: var(--accent-light); }
+.smiley-btn.selected { border-color: var(--primary); background: var(--accent-light); }
+.smiley-btn .lbl { font-size: 9.5px; color: var(--text-muted); font-weight: 600; line-height: 1.2; }
+
+@media print {
+  .track-wrap { background: white !important; padding: 0; }
+  .track-header { color: var(--text); }
+  .track-header h1 { color: var(--text); }
+  .track-card { box-shadow: none; border: 1px solid #e2e8f0; }
+  #searchCard, .track-back, #messageFormBox, #satisfactionSection { display: none !important; }
+}

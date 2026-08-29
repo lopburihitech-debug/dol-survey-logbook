@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แผนที่ช่างรังวัด — DOL Survey Logbook</title>
+<link rel="icon" type="image/png" href="/img/favicon-32.png" sizes="32x32">
+<link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="topbar" id="topbar"></div>
+<div class="container" id="pageContainer">
+  <h1>แผนที่ช่างรังวัด</h1>
+  <div class="subtitle">ตำแหน่งที่ช่างรังวัดแต่ละคนออกไปตามวันนัดรังวัด พร้อมระยะทางจากสำนักงาน — คลิกหมุดหรือรายการเพื่อดูรายละเอียดเรื่อง</div>
+
+  <div class="card" id="filterCard" style="display:none;">
+    <div class="filters">
+      <select id="provinceFilter" style="display:none;">
+        <option value="">ทุกจังหวัด</option>
+      </select>
+      <select id="officeFilter" style="display:none;">
+        <option value="">ทุกสำนักงาน</option>
+      </select>
+      <button class="btn btn-outline btn-sm" id="clearFiltersBtn" type="button">ล้างตัวกรอง</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+      <button type="button" class="btn btn-sm" id="modeDayBtn">รายวัน</button>
+      <button type="button" class="btn btn-sm" id="modeMonthBtn">รายเดือน</button>
+      <button type="button" class="btn btn-sm" id="modeYearBtn">รายปี</button>
+    </div>
+    <div class="cal-header" style="flex-wrap:wrap; gap:10px;">
+      <button class="btn btn-outline btn-sm" id="prevRangeBtn">&lsaquo; ก่อนหน้า</button>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center;">
+        <div class="cal-month-label" id="rangeLabel">-</div>
+        <input type="date" id="dayPicker" style="display:none;">
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-outline btn-sm" id="todayBtn">วันนี้</button>
+        <button class="btn btn-outline btn-sm" id="nextRangeBtn">ถัดไป &rsaquo;</button>
+      </div>
+    </div>
+    <div class="subtitle" id="rangeSummary" style="margin-top:10px; margin-bottom:0;"></div>
+  </div>
+
+  <div class="card">
+    <div id="fieldMapBasemapPicker" style="margin-bottom:10px;"></div>
+    <div id="fieldMapWrap" style="position:relative; width:100%; height:min(560px, 70vh); background:#eef2f6; border-radius:10px; overflow:hidden; touch-action:none; cursor:grab;">
+      <div class="loading">กำลังโหลด...</div>
+    </div>
+    <div id="fieldMapLegend" style="margin-top:10px; font-size:12px; color:var(--text-muted);"></div>
+  </div>
+
+  <div class="card" id="noCoordCard" style="display:none;">
+    <h2 style="margin-top:0; font-size:14px;">เรื่องที่ไม่มีพิกัดแปลง (ไม่แสดงบนแผนที่)</h2>
+    <div class="subtitle" style="margin-bottom:8px;">เรื่องเหล่านี้มีช่างรับผิดชอบและนัดรังวัดในช่วงที่เลือกแล้ว แต่ยังไม่มีพิกัด lat/lng ของแปลงที่ดิน — เพิ่มพิกัดได้จากหน้ารายละเอียดเรื่อง</div>
+    <div id="noCoordList"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0; font-size:14px;">รายการจุดทั้งหมดในช่วงที่เลือก</h2>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th></th><th>ช่างรังวัด</th><th>รว.12</th><th>ประเภทงาน</th><th>สำนักงาน</th><th>วันนัดรังวัด</th><th>ระยะทางจากสำนักงาน</th></tr>
+      </thead>
+      <tbody id="stopsBody"><tr><td colspan="7" class="loading">กำลังโหลด...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: รายละเอียดจุดที่เลือก -->
+<div class="modal-backdrop" id="stopPopup" style="display:none;">
+  <div class="modal">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+      <div class="avatar-circle large" id="sp_avatar">?</div>
+      <div>
+        <h3 style="margin:0;" id="sp_surveyor">-</h3>
+        <div class="subtitle" style="margin:2px 0 0;" id="sp_office">-</div>
+      </div>
+    </div>
+    <div class="info-grid" style="margin-top:10px;">
+      <div><span class="k">รว.12:</span> <span id="sp_code">-</span></div>
+      <div><span class="k">ผู้ขอ:</span> <span id="sp_requester">-</span></div>
+      <div><span class="k">ประเภทงาน:</span> <span id="sp_type">-</span></div>
+      <div><span class="k">สถานะ:</span> <span id="sp_status">-</span></div>
+      <div><span class="k">วันนัดรังวัด:</span> <span id="sp_appointment">-</span></div>
+      <div><span class="k">ระยะทางจากสำนักงาน:</span> <span id="sp_distance">-</span></div>
+    </div>
+    <div class="action-bar">
+      <button class="btn btn-primary" id="sp_viewBtn">ดูรายละเอียดเรื่อง</button>
+      <button type="button" class="btn btn-outline" onclick="closeStopPopup()">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  requireAuth();
+
+  // เฉพาะบทบาทเชิงบริหาร/หัวหน้า — ดูเหตุผลที่คอมเมนต์ตรงลิงก์เมนูใน js/api.js (renderTopbar)
+  const ALLOWED_ROLES = ["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"];
+
+  let currentUser = null;
+  let offices = [];
+  let officesById = {};
+  let typeMap = {};
+  let caseStore = {};
+  let currentStops = [];
+  let photoUrlCache = {}; // surveyor_id -> blob URL ของรูปถ่าย (ดึงครั้งเดียว ใช้ซ้ำได้ตลอดหน้านี้)
+  const filters = { province: "", officeId: "" };
+
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  const now = new Date();
+  let rangeMode = "month"; // day | month | year — ค่าเริ่มต้นเป็นรายเดือน (เห็นภาพรวมงานทั้งเดือนตั้งแต่เปิดหน้า)
+  let viewDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  async function init() {
+    currentUser = await renderTopbar("field-map");
+    if (!currentUser) return;
+    if (!ALLOWED_ROLES.includes(currentUser.role)) {
+      document.getElementById("pageContainer").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะบทบาทเชิงบริหาร/หัวหน้าช่างรังวัดขึ้นไป</div>";
+      return;
+    }
+
+    const types = (await apiFetch("/survey-types")) || [];
+    types.forEach((t) => (typeMap[t.id] = t.name));
+
+    // ดึงรายชื่อสำนักงานทั้งหมดเสมอ (ไม่ขึ้นกับบทบาท) เพราะทุกบทบาทต้องใช้พิกัด/ชื่อสำนักงานคำนวณระยะทาง+ปักหมุด
+    // สำนักงาน แม้บทบาทที่ขอบเขตจำกัดแค่สำนักงานเดียว (supervisor/branch_admin) ก็ยังต้องรู้พิกัดสำนักงานตัวเองอยู่ดี
+    // — ตัวกรองจังหวัด/สำนักงานที่เป็น dropdown ให้เลือกเองต่างหาก ถึงจะจำกัดแสดงเฉพาะบทบาทที่เห็นได้กว้างกว่า 1
+    // สำนักงาน (เหมือนหน้าปฏิทินนัดรังวัด calendar.html)
+    offices = (await apiFetch("/offices")) || [];
+    officesById = {};
+    offices.forEach((o) => (officesById[o.id] = o));
+
+    if (["system_admin", "administrator", "province_admin"].includes(currentUser.role)) {
+      let scoped = offices;
+      if (currentUser.role === "province_admin") {
+        const myOffice = offices.find((o) => o.id === currentUser.office_id);
+        if (myOffice) scoped = offices.filter((o) => o.province === myOffice.province);
+      }
+      if (scoped.length > 1) {
+        document.getElementById("filterCard").style.display = "";
+        setupProvinceFilterOptions(scoped);
+        setupOfficeFilterOptions(scoped, "");
+        bindFilterControls(scoped);
+      }
+    }
+
+    document.getElementById("modeDayBtn").addEventListener("click", () => setMode("day"));
+    document.getElementById("modeMonthBtn").addEventListener("click", () => setMode("month"));
+    document.getElementById("modeYearBtn").addEventListener("click", () => setMode("year"));
+    document.getElementById("prevRangeBtn").addEventListener("click", () => stepRange(-1));
+    document.getElementById("nextRangeBtn").addEventListener("click", () => stepRange(1));
+    document.getElementById("todayBtn").addEventListener("click", () => {
+      viewDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      loadRange();
+    });
+    document.getElementById("dayPicker").addEventListener("change", (e) => {
+      if (!e.target.value) return;
+      const [y, m, d] = e.target.value.split("-").map(Number);
+      viewDate = new Date(y, m - 1, d);
+      loadRange();
+    });
+
+    updateModeButtons();
+    await loadRange();
+  }
+
+  // ---------------------------------------------------------------------------
+  // ตัวกรองจังหวัด/สำนักงาน — กรองฝั่ง client จากเรื่องที่โหลดมาแล้ว (เทียบ office_id ของแต่ละเรื่องกับ officesById)
+  // รูปแบบเดียวกับ calendar.html
+  // ---------------------------------------------------------------------------
+  function setupProvinceFilterOptions(scopedOffices) {
+    const sel = document.getElementById("provinceFilter");
+    const provinces = [...new Set(scopedOffices.map((o) => o.province).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+    if (provinces.length > 1) {
+      sel.style.display = "";
+      sel.innerHTML = `<option value="">ทุกจังหวัด</option>` + provinces.map((p) => `<option value="${p}">${p}</option>`).join("");
+      sel.value = filters.province;
+    } else {
+      sel.style.display = "none";
+      filters.province = "";
+    }
+  }
+
+  function setupOfficeFilterOptions(scopedOffices, provinceFilterValue) {
+    const sel = document.getElementById("officeFilter");
+    const scoped = scopedOffices.filter((o) => !provinceFilterValue || o.province === provinceFilterValue);
+    const sorted = scoped.slice().sort((a, b) => a.name.localeCompare(b.name, "th"));
+    sel.innerHTML = `<option value="">ทุกสำนักงาน</option>` + sorted.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    if (scoped.length > 1) {
+      sel.style.display = "";
+      sel.value = scoped.some((o) => o.id === filters.officeId) ? filters.officeId : "";
+      filters.officeId = sel.value;
+    } else {
+      sel.style.display = "none";
+      filters.officeId = "";
+    }
+  }
+
+  function bindFilterControls(scopedOffices) {
+    document.getElementById("provinceFilter").addEventListener("change", (e) => {
+      filters.province = e.target.value;
+      setupOfficeFilterOptions(scopedOffices, filters.province);
+      loadRange();
+    });
+    document.getElementById("officeFilter").addEventListener("change", (e) => {
+      filters.officeId = e.target.value;
+      loadRange();
+    });
+    document.getElementById("clearFiltersBtn").addEventListener("click", () => {
+      filters.province = "";
+      filters.officeId = "";
+      setupProvinceFilterOptions(scopedOffices);
+      setupOfficeFilterOptions(scopedOffices, "");
+      loadRange();
+    });
+  }
+
+  function matchesOfficeFilter(c) {
+    if (filters.officeId) return c.office_id === filters.officeId;
+    if (filters.province) {
+      const office = officesById[c.office_id];
+      return !!office && office.province === filters.province;
+    }
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // โหมดช่วงเวลา (รายวัน/รายเดือน/รายปี) + การเลื่อนช่วง
+  // ---------------------------------------------------------------------------
+  function setMode(mode) {
+    if (mode === rangeMode) return;
+    rangeMode = mode;
+    updateModeButtons();
+    loadRange();
+  }
+
+  function updateModeButtons() {
+    ["day", "month", "year"].forEach((m) => {
+      const btn = document.getElementById("mode" + m.charAt(0).toUpperCase() + m.slice(1) + "Btn");
+      btn.className = "btn btn-sm " + (m === rangeMode ? "btn-primary" : "btn-outline");
+    });
+    document.getElementById("dayPicker").style.display = rangeMode === "day" ? "" : "none";
+  }
+
+  function stepRange(delta) {
+    if (rangeMode === "day") viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + delta);
+    else if (rangeMode === "month") viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1);
+    else viewDate = new Date(viewDate.getFullYear() + delta, 0, 1);
+    loadRange();
+  }
+
+  function dateStr(d) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }
+
+  // ขอบเขตวันที่ของช่วงที่กำลังแสดง — appointment_to เป็นขอบเขตแบบ "ไม่รวม" เสมอ (ดูเหตุผลใน calendar.html/backend)
+  function currentRange() {
+    if (rangeMode === "day") {
+      const from = dateStr(viewDate);
+      const to = dateStr(new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + 1));
+      return { from, to, label: fmtDateOnly(from) };
+    }
+    if (rangeMode === "month") {
+      const from = `${viewDate.getFullYear()}-${pad2(viewDate.getMonth() + 1)}-01`;
+      const nextMonth = viewDate.getMonth() === 11 ? 0 : viewDate.getMonth() + 1;
+      const nextYear = viewDate.getMonth() === 11 ? viewDate.getFullYear() + 1 : viewDate.getFullYear();
+      const to = `${nextYear}-${pad2(nextMonth + 1)}-01`;
+      const label = viewDate.toLocaleDateString("th-TH", { year: "numeric", month: "long" });
+      return { from, to, label };
+    }
+    // year
+    const from = `${viewDate.getFullYear()}-01-01`;
+    const to = `${viewDate.getFullYear() + 1}-01-01`;
+    const label = viewDate.toLocaleDateString("th-TH", { year: "numeric" });
+    return { from, to, label };
+  }
+
+  async function loadRange() {
+    const { from, to, label } = currentRange();
+    document.getElementById("rangeLabel").textContent = label;
+    document.getElementById("dayPicker").value = dateStr(viewDate);
+    document.getElementById("fieldMapWrap").innerHTML = `<div class="loading">กำลังโหลด...</div>`;
+    document.getElementById("stopsBody").innerHTML = `<tr><td colspan="7" class="loading">กำลังโหลด...</td></tr>`;
+
+    const params = new URLSearchParams({ appointment_from: from, appointment_to: to });
+    const cases = ((await apiFetch("/survey-cases?" + params.toString())) || []).filter(matchesOfficeFilter);
+    cases.forEach((c) => (caseStore[c.id] = c));
+
+    buildStops(cases);
+    mapView = null; // ช่วงเวลาเปลี่ยน -> จัดกรอบมุมมองแผนที่ใหม่ให้พอดีกับหมุดชุดใหม่
+    renderRangeSummary();
+    renderNoCoordList();
+    renderStopsTable();
+    renderFieldMapSection();
+  }
+
+  // ---------------------------------------------------------------------------
+  // คำนวณจุดที่จะปักหมุด (ต้องมีทั้งช่างรับผิดชอบ และพิกัดแปลง lat/lng) + ระยะทางจากสำนักงาน (Haversine เส้นตรง —
+  // ไม่ใช่ระยะทางถนนจริง เพราะระบบนี้ไม่พึ่งบริการนำทาง/API ภายนอกที่ต้องขอคีย์ ตามหลักการเดิมของระบบ)
+  // ---------------------------------------------------------------------------
+  let currentNoCoordCases = [];
+
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function buildStops(cases) {
+    const stops = [];
+    const noCoord = [];
+    cases.forEach((c) => {
+      if (!c.assigned_surveyor) return; // ไม่มีช่างรับผิดชอบ -> ไม่รู้จะปักหมุดใคร ข้ามไป (ไม่นับเป็น "ไม่มีพิกัด" ด้วย)
+      const p = c.parcel;
+      if (!p || p.lat === null || p.lat === undefined || p.lng === null || p.lng === undefined) {
+        noCoord.push(c);
+        return;
+      }
+      const office = officesById[c.office_id] || null;
+      const hasOfficeCoord = office && office.lat !== null && office.lat !== undefined && office.lng !== null && office.lng !== undefined;
+      stops.push({
+        uid: c.id,
+        case: c,
+        surveyor: c.assigned_surveyor,
+        office,
+        lat: p.lat,
+        lng: p.lng,
+        distanceKm: hasOfficeCoord ? haversineKm(office.lat, office.lng, p.lat, p.lng) : null,
+      });
+    });
+    currentStops = stops;
+    currentNoCoordCases = noCoord;
+  }
+
+  function renderRangeSummary() {
+    const box = document.getElementById("rangeSummary");
+    const parts = [`ปักหมุดได้ ${currentStops.length} เรื่อง`];
+    if (currentNoCoordCases.length) parts.push(`${currentNoCoordCases.length} เรื่องไม่มีพิกัดแปลง (ไม่แสดงบนแผนที่)`);
+    if (filters.province || filters.officeId) parts.push("ตามตัวกรองที่เลือก");
+    box.textContent = currentStops.length === 0 && currentNoCoordCases.length === 0
+      ? "ไม่มีเรื่องที่นัดรังวัดในช่วงที่เลือก"
+      : parts.join(" · ");
+  }
+
+  function renderNoCoordList() {
+    const card = document.getElementById("noCoordCard");
+    if (!currentNoCoordCases.length) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "";
+    document.getElementById("noCoordList").innerHTML = currentNoCoordCases
+      .map((c) => `<div style="padding:4px 0;"><a href="/case.html?id=${c.id}" style="color:var(--primary);">${c.case_code}</a> — ${c.requester_name} (${surveyorLabel(c.assigned_surveyor)})</div>`)
+      .join("");
+  }
+
+  function surveyorLabel(s) {
+    if (!s) return "ยังไม่มอบหมาย";
+    return s.full_name + (s.nickname ? " (" + s.nickname + ")" : "");
+  }
+
+  // ---------------------------------------------------------------------------
+  // สีประจำช่างแต่ละคน (คงที่ตลอดการเปิดหน้านี้ 1 ครั้ง) ใช้เป็นขอบวงกลมรูป ให้แยกช่างออกจากกันได้ง่ายบนแผนที่
+  // แม้จะยังโหลดรูปถ่ายไม่เสร็จ (ตัวอักษรย่อก็ยังมีขอบสีต่างกันช่วยแยกได้)
+  // ---------------------------------------------------------------------------
+  const STOP_COLORS = ["#dc2626", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#16a34a", "#ca8a04", "#4f46e5", "#059669"];
+  let surveyorColorMap = {};
+  function colorForSurveyor(surveyorId) {
+    if (!surveyorColorMap[surveyorId]) {
+      const idx = Object.keys(surveyorColorMap).length % STOP_COLORS.length;
+      surveyorColorMap[surveyorId] = STOP_COLORS[idx];
+    }
+    return surveyorColorMap[surveyorId];
+  }
+
+  function renderStopsTable() {
+    const tbody = document.getElementById("stopsBody");
+    if (!currentStops.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ไม่มีจุดที่จะแสดงในช่วงเวลานี้</td></tr>`;
+      return;
+    }
+    const sorted = currentStops.slice().sort((a, b) => (a.case.appointment_date || "").localeCompare(b.case.appointment_date || ""));
+    tbody.innerHTML = sorted
+      .map((s) => {
+        const color = colorForSurveyor(s.surveyor.surveyor_id);
+        const initial = (s.surveyor.full_name || "?").charAt(0);
+        return `
+        <tr class="clickable" onclick="openStopPopup('${s.uid}')">
+          <td><div class="avatar-circle" id="stop-avatar-${s.uid}" style="border:2px solid ${color};">${initial}</div></td>
+          <td>${surveyorLabel(s.surveyor)}</td>
+          <td>${s.case.case_code}</td>
+          <td>${typeMap[s.case.survey_type_id] || "-"}</td>
+          <td>${s.office ? s.office.name : "-"}</td>
+          <td>${fmtDateOnly(s.case.appointment_date)}</td>
+          <td>${s.distanceKm === null ? "<span class='subtitle' style='font-size:12px;'>ไม่มีพิกัดสำนักงาน</span>" : s.distanceKm.toFixed(1) + " กม."}</td>
+        </tr>`;
+      })
+      .join("");
+
+    // โหลดรูปถ่ายช่างแบบ async (ต้องแนบ token เพราะไฟล์รูปอยู่หลัง @login_required) — โหลดครั้งเดียวต่อคน แคชไว้ใช้ซ้ำ
+    // ทั้งในตารางและบนแผนที่
+    const seen = new Set();
+    sorted.forEach((s) => {
+      const sid = s.surveyor.surveyor_id;
+      if (seen.has(sid)) return;
+      seen.add(sid);
+      if (!s.surveyor.photo_url || photoUrlCache[sid]) return;
+      fetchAuthedBlobUrl(s.surveyor.photo_url).then((url) => {
+        if (!url) return;
+        photoUrlCache[sid] = url;
+        // อัปเดตทุกจุด (ตาราง+แผนที่) ของช่างคนนี้ที่กำลังแสดงอยู่ตอนนี้
+        refreshAvatarImages(sid, url);
+      });
+    });
+  }
+
+  function refreshAvatarImages(surveyorId, url) {
+    currentStops.filter((s) => s.surveyor.surveyor_id === surveyorId).forEach((s) => {
+      const tableAvatar = document.getElementById("stop-avatar-" + s.uid);
+      if (tableAvatar) tableAvatar.innerHTML = `<img src="${url}" alt="">`;
+      const mapAvatar = document.getElementById("map-avatar-" + s.uid);
+      if (mapAvatar) mapAvatar.innerHTML = `<img src="${url}" alt="">`;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ป็อปอัพรายละเอียดจุดที่เลือก (คลิกจากหมุดบนแผนที่ หรือแถวในตาราง)
+  // ---------------------------------------------------------------------------
+  function openStopPopup(uid) {
+    const s = currentStops.find((x) => x.uid === uid);
+    if (!s) return;
+    const initial = (s.surveyor.full_name || "?").charAt(0);
+    const cachedPhoto = photoUrlCache[s.surveyor.surveyor_id];
+    document.getElementById("sp_avatar").innerHTML = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : initial;
+    document.getElementById("sp_surveyor").textContent = surveyorLabel(s.surveyor);
+    document.getElementById("sp_office").textContent = s.office ? s.office.name : "ไม่ทราบสำนักงาน";
+    document.getElementById("sp_code").textContent = s.case.case_code;
+    document.getElementById("sp_requester").textContent = s.case.requester_name || "-";
+    document.getElementById("sp_type").textContent = typeMap[s.case.survey_type_id] || "-";
+    document.getElementById("sp_status").innerHTML = statusBadge(s.case.status);
+    document.getElementById("sp_appointment").textContent = fmtDateOnly(s.case.appointment_date);
+    document.getElementById("sp_distance").textContent = s.distanceKm === null
+      ? "ไม่มีพิกัดสำนักงาน (เพิ่มได้ที่หน้าจัดการสำนักงาน)"
+      : s.distanceKm.toFixed(1) + " กม. (เส้นตรง จากสำนักงานถึงแปลง)";
+    document.getElementById("sp_viewBtn").onclick = () => (window.location.href = "/case.html?id=" + s.case.id);
+    document.getElementById("stopPopup").style.display = "flex";
+  }
+
+  function closeStopPopup() {
+    document.getElementById("stopPopup").style.display = "none";
+  }
+
+  // ---------------------------------------------------------------------------
+  // แผนที่ — สูตร Web Mercator / slippy-map tile มาตรฐานเดียวกับแผนที่หมุดหลักเขตใน case.html (เขียนเองล้วนๆ
+  // ไม่พึ่งไลบรารีแผนที่จาก CDN ตามหลักการเดิมของระบบ) ต่างกันตรงที่หมุดที่นี่เป็นรูปช่างรังวัด (วงกลม) แทนหมุดวงกลม
+  // เปล่าธรรมดา และปักหมุด "สำนักงาน" เป็นจุดอ้างอิงเพิ่มด้วย
+  // ---------------------------------------------------------------------------
+  const FM_BASEMAPS = {
+    street: {
+      label: "🗺️ แผนที่ถนน",
+      maxZoom: 19,
+      urlTemplate: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+      attributionHtml: `© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors`,
+    },
+    satellite: {
+      label: "🛰️ ภาพถ่ายดาวเทียม",
+      maxZoom: 19,
+      // Esri มีภาพถ่ายดาวเทียมความละเอียดสูง (ซูมได้ถึง 19) เฉพาะในเมือง/พื้นที่ที่มีการถ่ายภาพความละเอียดสูงไว้
+      // เท่านั้น พื้นที่ชนบท/ห่างไกลส่วนใหญ่มีภาพเก็บไว้จริงแค่ถึงซูมประมาณนี้ ถ้าขอภาพที่ซูมลึกกว่านี้ Esri จะตอบกลับ
+      // เป็นภาพ "Map data not yet available" (ไม่ใช่ error จึงจับด้วย onerror ไม่ได้) — แก้โดยจำกัดการขอภาพจริงไว้ที่
+      // ซูมนี้ (nativeMaxZoom) แล้วขยาย/ซูมภาพเดิมให้ใหญ่ขึ้นเอง (ดู renderFieldMap) เมื่อผู้ใช้ซูมลึกกว่านี้ แทนที่จะ
+      // ปล่อยให้เจอช่องว่างเปล่าๆ — ภาพจะเบลอขึ้นตามสัดส่วนที่ซูมเกิน ซึ่งเป็นพฤติกรรมเดียวกับแผนที่ดาวเทียมทั่วไป
+      nativeMaxZoom: 16,
+      urlTemplate: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+      attributionHtml: `© <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics`,
+    },
+    terrain: {
+      label: "⛰️ ภูมิประเทศ",
+      maxZoom: 17,
+      urlTemplate: (z, x, y) => `https://tile.opentopomap.org/${z}/${x}/${y}.png`,
+      attributionHtml: `© <a href="https://opentopomap.org/" target="_blank" rel="noopener">OpenTopoMap</a> (data: OpenStreetMap/SRTM)`,
+    },
+  };
+  let currentFmBasemap = "street";
+
+  function renderFmBasemapPicker() {
+    const box = document.getElementById("fieldMapBasemapPicker");
+    box.innerHTML = Object.entries(FM_BASEMAPS)
+      .map(([key, b]) => {
+        const active = key === currentFmBasemap;
+        return `<button type="button" class="btn ${active ? "btn-primary" : "btn-outline"} btn-sm"
+          style="margin-right:8px; margin-bottom:6px;" onclick="setFmBasemap('${key}')">${b.label}</button>`;
+      })
+      .join("");
+  }
+
+  function setFmBasemap(key) {
+    if (!FM_BASEMAPS[key] || key === currentFmBasemap) return;
+    currentFmBasemap = key;
+    if (mapView) mapView.zoom = Math.min(mapView.zoom, FM_BASEMAPS[key].maxZoom);
+    renderFmBasemapPicker();
+    renderFieldMap();
+  }
+
+  const MERCATOR_TILE_SIZE = 256;
+  function lonToGlobalPx(lonDeg, zoom) {
+    return ((lonDeg + 180) / 360) * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
+  }
+  function latToGlobalPx(latDeg, zoom) {
+    const latRad = (latDeg * Math.PI) / 180;
+    const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2;
+    return y * MERCATOR_TILE_SIZE * Math.pow(2, zoom);
+  }
+  function globalPxToLon(px, zoom) {
+    return (px / (MERCATOR_TILE_SIZE * Math.pow(2, zoom))) * 360 - 180;
+  }
+  function globalPxToLat(py, zoom) {
+    const n = Math.PI - (2 * Math.PI * py) / (MERCATOR_TILE_SIZE * Math.pow(2, zoom));
+    return (180 / Math.PI) * Math.atan(Math.sinh(n));
+  }
+
+  const MAP_MIN_ZOOM = 3;
+  let mapView = null; // { zoom, centerLng, centerLat } — คงอยู่ข้ามการ re-render จนกว่าข้อมูลหมุดจะเปลี่ยน (ดู loadRange)
+
+  // จุดทั้งหมดที่ต้องอยู่ในกรอบมุมมอง: ทั้งหมุดงาน (parcel) และหมุดสำนักงานที่เกี่ยวข้อง (ให้เห็นบริบทระยะทางด้วย)
+  function allMapPoints() {
+    const pts = currentStops.map((s) => ({ lat: s.lat, lng: s.lng }));
+    const officeIdsInView = new Set(currentStops.map((s) => s.case.office_id));
+    officeIdsInView.forEach((oid) => {
+      const o = officesById[oid];
+      if (o && o.lat !== null && o.lat !== undefined && o.lng !== null && o.lng !== undefined) {
+        pts.push({ lat: o.lat, lng: o.lng });
+      }
+    });
+    return pts;
+  }
+
+  function fitFieldMapToPoints() {
+    const wrap = document.getElementById("fieldMapWrap");
+    const width = (wrap && wrap.clientWidth) || 800;
+    const height = (wrap && wrap.clientHeight) || 480;
+    const pad = 50;
+    const basemap = FM_BASEMAPS[currentFmBasemap];
+    const pts = allMapPoints();
+
+    const lats = pts.map((p) => p.lat);
+    const lngs = pts.map((p) => p.lng);
+    const latMin = Math.min(...lats), latMax = Math.max(...lats);
+    const lngMin = Math.min(...lngs), lngMax = Math.max(...lngs);
+
+    let zoom = basemap.maxZoom;
+    for (; zoom >= MAP_MIN_ZOOM; zoom--) {
+      const w = lonToGlobalPx(lngMax, zoom) - lonToGlobalPx(lngMin, zoom);
+      const h = latToGlobalPx(latMin, zoom) - latToGlobalPx(latMax, zoom);
+      if (w <= width - 2 * pad && h <= height - 2 * pad) break;
+    }
+    mapView = { zoom, centerLng: (lngMin + lngMax) / 2, centerLat: (latMin + latMax) / 2 };
+  }
+
+  function renderFieldMapSection() {
+    renderFmBasemapPicker();
+    renderFieldMap();
+  }
+
+  function renderFieldMap() {
+    const wrap = document.getElementById("fieldMapWrap");
+    const legend = document.getElementById("fieldMapLegend");
+    const pts = allMapPoints();
+    if (!pts.length) {
+      wrap.innerHTML = `<div class="subtitle" style="margin:0; height:100%; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 20px;">ไม่มีเรื่องที่มีทั้งช่างรับผิดชอบและพิกัดแปลงในช่วงเวลานี้</div>`;
+      legend.innerHTML = "";
+      return;
+    }
+
+    if (!mapView) fitFieldMapToPoints();
+
+    const width = wrap.clientWidth || 800;
+    const height = wrap.clientHeight || 480;
+    const basemap = FM_BASEMAPS[currentFmBasemap];
+    const zoom = Math.min(mapView.zoom, basemap.maxZoom);
+
+    const centerOriginX = lonToGlobalPx(mapView.centerLng, zoom) - width / 2;
+    const centerOriginY = latToGlobalPx(mapView.centerLat, zoom) - height / 2;
+    const toPx = (lat, lng) => ({
+      sx: lonToGlobalPx(lng, zoom) - centerOriginX,
+      sy: latToGlobalPx(lat, zoom) - centerOriginY,
+    });
+
+    // ถ้าซูมภาพเกินความละเอียดจริงที่มี (ดูคอมเมนต์ nativeMaxZoom ของแต่ละชั้นแผนที่ด้านบน — ตอนนี้มีผลกับดาวเทียม
+    // เท่านั้น) ให้ขอภาพจริงที่ระดับ nativeZoom แล้วขยาย/ครอปภาพเดิมให้ครอบคลุมช่องที่ต้องแสดง แทนที่จะขอภาพที่ซูมลึก
+    // เกินไปจนเจอ "Map data not yet available" — overzoomFactor คือจำนวนช่องบนแกนหนึ่งๆ ที่ภาพต้นฉบับ 1 รูปต้องขยาย
+    // คลุม (เช่น 4 แปลว่าภาพต้นฉบับ 1 รูปถูกขยายคลุม 4x4 = 16 ช่องที่ระดับซูมที่ขอจริง)
+    const nativeZoom = basemap.nativeMaxZoom ? Math.min(zoom, basemap.nativeMaxZoom) : zoom;
+    const overzoomFactor = Math.round(2 ** (zoom - nativeZoom));
+
+    const tilesPerSide = Math.pow(2, zoom);
+    const firstTileX = Math.floor(centerOriginX / MERCATOR_TILE_SIZE);
+    const lastTileX = Math.floor((centerOriginX + width) / MERCATOR_TILE_SIZE);
+    const firstTileY = Math.floor(centerOriginY / MERCATOR_TILE_SIZE);
+    const lastTileY = Math.floor((centerOriginY + height) / MERCATOR_TILE_SIZE);
+    let tilesHtml = "";
+    for (let tx = firstTileX; tx <= lastTileX; tx++) {
+      const wrappedX = ((tx % tilesPerSide) + tilesPerSide) % tilesPerSide;
+      for (let ty = firstTileY; ty <= lastTileY; ty++) {
+        if (ty < 0 || ty >= tilesPerSide) continue;
+        const left = tx * MERCATOR_TILE_SIZE - centerOriginX;
+        const top = ty * MERCATOR_TILE_SIZE - centerOriginY;
+        if (overzoomFactor <= 1) {
+          tilesHtml += `<img src="${basemap.urlTemplate(zoom, wrappedX, ty)}" loading="lazy" alt=""
+            style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;" />`;
+        } else {
+          const nativeTx = Math.floor(wrappedX / overzoomFactor);
+          const nativeTy = Math.floor(ty / overzoomFactor);
+          const offsetX = (wrappedX % overzoomFactor) * MERCATOR_TILE_SIZE;
+          const offsetY = (ty % overzoomFactor) * MERCATOR_TILE_SIZE;
+          const scaledSize = MERCATOR_TILE_SIZE * overzoomFactor;
+          tilesHtml += `<div style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px; overflow:hidden;">
+            <img src="${basemap.urlTemplate(nativeZoom, nativeTx, nativeTy)}" loading="lazy" alt=""
+              style="position:absolute; left:${-offsetX}px; top:${-offsetY}px; width:${scaledSize}px; height:${scaledSize}px;" />
+          </div>`;
+        }
+      }
+    }
+
+    // หมุดสำนักงาน (🏢) — เฉพาะสำนักงานที่มีเรื่องปรากฏในช่วงที่แสดงอยู่ และมีการกรอกพิกัดไว้แล้ว
+    const officeIdsInView = new Set(currentStops.map((s) => s.case.office_id));
+    let officeMarkersHtml = "";
+    officeIdsInView.forEach((oid) => {
+      const o = officesById[oid];
+      if (!o || o.lat === null || o.lat === undefined || o.lng === null || o.lng === undefined) return;
+      const p = toPx(o.lat, o.lng);
+      officeMarkersHtml += `
+        <div style="position:absolute; left:${p.sx}px; top:${p.sy}px; transform:translate(-50%,-100%); z-index:2; text-align:center; pointer-events:none;">
+          <div style="width:30px; height:30px; border-radius:50%; background:#1e293b; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; box-shadow:0 1px 4px rgba(0,0,0,.35); border:2px solid #fff;">🏢</div>
+          <div style="width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #1e293b; margin:-1px auto 0;"></div>
+          <div style="background:rgba(30,41,59,0.9); color:#fff; font-size:10.5px; padding:1px 6px; border-radius:4px; margin-top:2px; white-space:nowrap; display:inline-block;">${o.name}</div>
+        </div>`;
+    });
+
+    // หมุดช่างรังวัด (รูปวงกลม + สีขอบประจำตัว) — คลิกเพื่อดูรายละเอียดเรื่องนั้น
+    let stopMarkersHtml = "";
+    currentStops.forEach((s) => {
+      const p = toPx(s.lat, s.lng);
+      const color = colorForSurveyor(s.surveyor.surveyor_id);
+      const initial = (s.surveyor.full_name || "?").charAt(0);
+      const cachedPhoto = photoUrlCache[s.surveyor.surveyor_id];
+      const inner = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : initial;
+      stopMarkersHtml += `
+        <div style="position:absolute; left:${p.sx}px; top:${p.sy}px; transform:translate(-50%,-100%); z-index:3; text-align:center; cursor:pointer;"
+          onclick="openStopPopup('${s.uid}')" title="${surveyorLabel(s.surveyor).replace(/"/g, "&quot;")} — ${s.case.case_code}">
+          <div class="avatar-circle" id="map-avatar-${s.uid}" style="width:36px; height:36px; margin:0 auto; border:3px solid ${color}; box-shadow:0 1px 4px rgba(0,0,0,.35);">${inner}</div>
+          <div style="width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:9px solid ${color}; margin:-2px auto 0;"></div>
+        </div>`;
+    });
+
+    const zoomBtn = (label, delta, title) =>
+      `<button type="button" title="${title}" onclick="zoomFieldMap(${delta})"
+        style="width:32px; height:32px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#1e293b;
+        font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.15);">${label}</button>`;
+
+    wrap.innerHTML = `
+      <div id="fieldMapLayer" style="position:absolute; left:0; top:0; width:${width}px; height:${height}px;">${tilesHtml}${officeMarkersHtml}${stopMarkersHtml}</div>
+      <div style="position:absolute; right:10px; top:10px; display:flex; flex-direction:column; gap:6px; z-index:5;">
+        ${zoomBtn("+", 1, "ซูมเข้า")}
+        ${zoomBtn("−", -1, "ซูมออก")}
+        <button type="button" title="จัดกึ่งกลางให้พอดีกับหมุดทั้งหมด" onclick="resetFieldMapView()"
+          style="width:32px; height:32px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#1e293b;
+          font-size:14px; cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,0.15);">🎯</button>
+      </div>
+      <div style="position:absolute; left:10px; bottom:8px; z-index:5; background:rgba(255,255,255,0.85);
+        padding:3px 8px; border-radius:5px; font-size:10.5px; color:#334155; pointer-events:none;">
+        🖐️ ลากเพื่อเลื่อนแผนที่ · เลื่อนล้อเมาส์/ปุ่ม +/− เพื่อซูม
+      </div>`;
+
+    attachFieldMapInteractions(wrap, width, height);
+
+    legend.innerHTML = `🏢 สำนักงาน · รูปวงกลม = ช่างรังวัด (สีขอบต่างกันตามตัวคน) — ระยะทางที่แสดงเป็นเส้นตรง (ไม่ใช่ระยะทางถนนจริง)
+      <div style="margin-top:4px;">แผนที่พื้นฐาน: ${basemap.attributionHtml} — ต้องมีอินเทอร์เน็ตเพื่อโหลดภาพแผนที่พื้นหลัง</div>`;
+
+    // โหลดรูปช่างที่ยังไม่เคยโหลด (เผื่อสลับช่วงเวลามาเจอช่างคนใหม่ที่ยังไม่เคยแสดงในตาราง)
+    const seen = new Set();
+    currentStops.forEach((s) => {
+      const sid = s.surveyor.surveyor_id;
+      if (seen.has(sid) || photoUrlCache[sid] || !s.surveyor.photo_url) return;
+      seen.add(sid);
+      fetchAuthedBlobUrl(s.surveyor.photo_url).then((url) => {
+        if (!url) return;
+        photoUrlCache[sid] = url;
+        refreshAvatarImages(sid, url);
+      });
+    });
+  }
+
+  function zoomFieldMap(delta) {
+    if (!mapView) return;
+    const basemap = FM_BASEMAPS[currentFmBasemap];
+    const newZoom = Math.min(basemap.maxZoom, Math.max(MAP_MIN_ZOOM, mapView.zoom + delta));
+    if (newZoom === mapView.zoom) return;
+    mapView.zoom = newZoom;
+    renderFieldMap();
+  }
+
+  function zoomFieldMapAt(delta, clientX, clientY, wrap) {
+    if (!mapView) return;
+    const basemap = FM_BASEMAPS[currentFmBasemap];
+    const newZoom = Math.min(basemap.maxZoom, Math.max(MAP_MIN_ZOOM, mapView.zoom + delta));
+    if (newZoom === mapView.zoom) return;
+    const rect = wrap.getBoundingClientRect();
+    const px = clientX - rect.left, py = clientY - rect.top;
+    const width = wrap.clientWidth, height = wrap.clientHeight;
+    const oldZoom = mapView.zoom;
+    const originX = lonToGlobalPx(mapView.centerLng, oldZoom) - width / 2;
+    const originY = latToGlobalPx(mapView.centerLat, oldZoom) - height / 2;
+    const lon = globalPxToLon(originX + px, oldZoom);
+    const lat = globalPxToLat(originY + py, oldZoom);
+
+    mapView.zoom = newZoom;
+    const newOriginX = lonToGlobalPx(lon, newZoom) - px;
+    const newOriginY = latToGlobalPx(lat, newZoom) - py;
+    mapView.centerLng = globalPxToLon(newOriginX + width / 2, newZoom);
+    mapView.centerLat = globalPxToLat(newOriginY + height / 2, newZoom);
+    renderFieldMap();
+  }
+
+  function resetFieldMapView() {
+    mapView = null;
+    renderFieldMap();
+  }
+
+  function attachFieldMapInteractions(wrap, width, height) {
+    const layer = document.getElementById("fieldMapLayer");
+    if (!layer) return;
+
+    function beginDrag(startClientX, startClientY, moveEventName, endEventName, getPoint) {
+      let moved = false;
+      wrap.style.cursor = "grabbing";
+
+      function onMove(e) {
+        const { x, y } = getPoint(e);
+        const dx = x - startClientX, dy = y - startClientY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        layer.style.transform = `translate(${dx}px, ${dy}px)`;
+        if (e.cancelable) e.preventDefault();
+      }
+      function onEnd(e) {
+        document.removeEventListener(moveEventName, onMove);
+        document.removeEventListener(endEventName, onEnd);
+        wrap.style.cursor = "grab";
+        layer.style.transform = "";
+        const point = e.changedTouches ? { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY } : getPoint(e);
+        const dx = point.x - startClientX, dy = point.y - startClientY;
+        if (moved && mapView) {
+          const zoom = mapView.zoom;
+          const originX = lonToGlobalPx(mapView.centerLng, zoom) - width / 2 - dx;
+          const originY = latToGlobalPx(mapView.centerLat, zoom) - height / 2 - dy;
+          mapView.centerLng = globalPxToLon(originX + width / 2, zoom);
+          mapView.centerLat = globalPxToLat(originY + height / 2, zoom);
+          renderFieldMap();
+        }
+      }
+      document.addEventListener(moveEventName, onMove, { passive: false });
+      document.addEventListener(endEventName, onEnd);
+    }
+
+    wrap.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      beginDrag(e.clientX, e.clientY, "mousemove", "mouseup", (ev) => ({ x: ev.clientX, y: ev.clientY }));
+    };
+    wrap.ontouchstart = (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      beginDrag(t.clientX, t.clientY, "touchmove", "touchend", (ev) => ({ x: ev.touches[0].clientX, y: ev.touches[0].clientY }));
+    };
+    wrap.onwheel = (e) => {
+      e.preventDefault();
+      zoomFieldMapAt(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY, wrap);
+    };
+    wrap.ondblclick = (e) => {
+      zoomFieldMapAt(1, e.clientX, e.clientY, wrap);
+    };
+  }
+
+  let fieldMapResizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (!currentStops.length && !document.getElementById("fieldMapWrap")) return;
+    clearTimeout(fieldMapResizeTimer);
+    fieldMapResizeTimer = setTimeout(() => renderFieldMap(), 200);
+  });
+
+  init();
+</script>
+</body>
+</html>

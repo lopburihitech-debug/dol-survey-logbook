@@ -606,12 +606,95 @@ def get_surveyor_profile_page(surveyor_id):
                 else:
                     checklist[field]["unset"] += 1
 
+        case_ids = [c["id"] for c in cases]
+
+        # วันที่ปิดงานจริงของแต่ละเรื่อง (ครั้งแรกที่สถานะเปลี่ยนเป็น "ถอนจ่ายแล้ว" CLOSED — เดียวกับเกณฑ์ที่ใช้นับ
+        # kpi["completed"]/by_type[...]["completed"] ด้านบน) ใช้คำนวณทั้งแนวโน้มงานเสร็จรายเดือน และอัตราปิดงานตรง
+        # กำหนด (เทียบกับ due_date ซึ่งคำนวณจาก target_days ของประเภทงานตอนรับเรื่อง — ดู services/sla.py)
+        closed_at_map = {}
+        if case_ids:
+            placeholders = ",".join("?" for _ in case_ids)
+            closed_rows = conn.execute(
+                f"""SELECT case_id, MIN(changed_at) AS closed_at FROM case_status_history
+                    WHERE case_id IN ({placeholders}) AND new_status = ?
+                    GROUP BY case_id""",
+                case_ids + [CaseStatus.CLOSED],
+            ).fetchall()
+            closed_at_map = {r["case_id"]: r["closed_at"] for r in closed_rows}
+
+        completed_by_month = {}
+        on_time = {"completed_with_due": 0, "on_time": 0, "late": 0}
+        for c in cases:
+            if c["status"] != CaseStatus.CLOSED:
+                continue
+            closed_date = _parse_date(closed_at_map.get(c["id"]))
+            if closed_date:
+                key = f"{closed_date.year:04d}-{closed_date.month:02d}"
+                completed_by_month[key] = completed_by_month.get(key, 0) + 1
+
+            due = _parse_date(c["due_date"])
+            if due and closed_date:
+                on_time["completed_with_due"] += 1
+                if closed_date <= due:
+                    on_time["on_time"] += 1
+                else:
+                    on_time["late"] += 1
+        on_time["rate"] = round(on_time["on_time"] / on_time["completed_with_due"] * 100, 1) if on_time["completed_with_due"] else None
+
+        # งานค้าง (ยังไม่จบ) แบ่งตามความเร่งด่วนนับจากวันนัดรังวัด — ละเอียดกว่า overdue_30/overdue_60 ใน kpi
+        # ด้านบน (ซึ่งเริ่มนับแค่ตอนเกิน 30/60 วันไปแล้ว) เพื่อให้ช่างเห็นภาพรวมงานค้างทั้งหมดว่าควรเร่งเรื่องไหนก่อน
+        aging = {"0_15": 0, "16_30": 0, "31_60": 0, "over_60": 0}
+        for c in cases:
+            if c["status"] in OVERDUE_EXCLUDED_STATUSES:
+                continue
+            appt = _parse_date(c["appointment_date"])
+            if not appt:
+                continue
+            diff_days = (today - appt).days
+            if diff_days < 0:
+                continue  # ยังไม่ถึงวันนัด ไม่นับเป็นงานค้างที่ต้องเร่ง
+            if diff_days <= 15:
+                aging["0_15"] += 1
+            elif diff_days <= 30:
+                aging["16_30"] += 1
+            elif diff_days <= 60:
+                aging["31_60"] += 1
+            else:
+                aging["over_60"] += 1
+
+        # คะแนนความพึงพอใจจากประชาชน (case_satisfaction_ratings) เฉพาะเรื่องที่ช่างคนนี้รับผิดชอบ — ให้คะแนนได้เมื่อ
+        # งานเสร็จสิ้นแล้วเท่านั้น (ดู public_track.py) จึงมีเฉพาะบางเรื่องในนี้ที่มีคะแนนจริง
+        satisfaction_distribution = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+        satisfaction_total = 0
+        satisfaction_count = 0
+        if case_ids:
+            rating_rows = conn.execute(
+                f"SELECT rating FROM case_satisfaction_ratings WHERE case_id IN ({placeholders})",
+                case_ids,
+            ).fetchall()
+            for r in rating_rows:
+                satisfaction_distribution[str(r["rating"])] = satisfaction_distribution.get(str(r["rating"]), 0) + 1
+                satisfaction_total += r["rating"]
+                satisfaction_count += 1
+        satisfaction = {
+            "average": round(satisfaction_total / satisfaction_count, 2) if satisfaction_count else None,
+            "count": satisfaction_count,
+            "distribution": satisfaction_distribution,
+        }
+
         return ok(
             {
                 "surveyor": dict(surveyor),
                 "kpi": kpi,
                 "by_type": sorted(by_type.values(), key=lambda t: t["total"], reverse=True),
                 "by_month": sorted(by_month.values(), key=lambda m: m["year_month"]),
+                "completed_by_month": sorted(
+                    [{"year_month": k, "completed": v} for k, v in completed_by_month.items()],
+                    key=lambda m: m["year_month"],
+                ),
+                "on_time": on_time,
+                "aging": aging,
+                "satisfaction": satisfaction,
                 "checklist": checklist,
                 "cases": cases,
             }

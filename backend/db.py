@@ -47,6 +47,11 @@ _COLUMN_MIGRATIONS = [
     ("users", "failed_login_attempts", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "lockout_until", "TEXT"),
     ("users", "pin_hash", "TEXT"),  # เข้ารหัสด้วย PBKDF2 เดียวกับ password_hash — NULL = ยังไม่ได้ตั้ง PIN
+    ("complaints", "reply_text", "TEXT"),
+    ("complaints", "replied_by", "TEXT"),
+    ("complaints", "replied_at", "TEXT"),
+    ("offices", "lat", "REAL"),
+    ("offices", "lng", "REAL"),
 ]
 
 

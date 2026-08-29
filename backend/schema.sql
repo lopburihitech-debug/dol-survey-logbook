@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS offices (
     province TEXT NOT NULL,
     district TEXT,
     address TEXT,
+    lat REAL,             -- พิกัดที่ตั้งสำนักงาน — ใช้เป็นจุดอ้างอิงคำนวณระยะทางในหน้าแผนที่ช่างรังวัด (field-map.html)
+    lng REAL,              -- NULL = ยังไม่ได้กรอก (แก้ไขได้ที่หน้าจัดการสำนักงาน offices.html)
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -241,7 +243,22 @@ CREATE TABLE IF NOT EXISTS complaints (
     status TEXT NOT NULL DEFAULT 'OPEN',
     resolved_by TEXT REFERENCES users(id),
     resolved_at TEXT,
+    reply_text TEXT,              -- คำตอบที่เจ้าหน้าที่/ช่างรังวัดพิมพ์ตอบกลับ ให้ประชาชนเห็นในหน้าติดตามงาน (track.html)
+    replied_by TEXT REFERENCES users(id),
+    replied_at TEXT,
     created_at TEXT NOT NULL
+);
+
+-- คะแนนความพึงพอใจจากประชาชน (หน้าน้อยยิ้ม 5 ระดับ ในหน้าติดตามงาน frontend/track.html) — เก็บได้ 1 คะแนนต่อ 1
+-- เรื่อง (case_id UNIQUE) เปิดให้ให้คะแนนเฉพาะเมื่องานเสร็จสิ้นแล้ว (ดู CaseStatus.COMPLETED/CLOSED ใน
+-- blueprints/public_track.py) — ให้ซ้ำได้ (แก้คะแนนเดิม) แต่ไม่สร้างแถวใหม่ซ้อน เผื่อกรณีกดผิดแล้วอยากแก้
+CREATE TABLE IF NOT EXISTS case_satisfaction_ratings (
+    id TEXT PRIMARY KEY,
+    case_id TEXT UNIQUE NOT NULL REFERENCES survey_cases(id),
+    rating INTEGER NOT NULL,      -- 1 (ไม่พอใจมาก) ถึง 5 (พอใจมาก)
+    comment TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS fees (

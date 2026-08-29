@@ -22,6 +22,7 @@ from helpers import (
 from security import login_required, require_roles
 from services.audit import log_action
 from services.case_code import generate_case_code
+from services.gmaps_link import extract_coords_from_maps_url
 from services.sla import add_business_days
 from services.thai_date import parse_flexible_date
 
@@ -49,7 +50,7 @@ def _enrich_case(conn, case: dict) -> dict:
     case["parcel"] = dict(parcel) if parcel else None
 
     assigned = conn.execute(
-        """SELECT s.id AS surveyor_id, s.employee_code, s.nickname, u.full_name
+        """SELECT s.id AS surveyor_id, s.employee_code, s.nickname, s.photo_url, u.full_name
            FROM case_assignments ca
            JOIN surveyors s ON s.id = ca.surveyor_id
            JOIN users u ON u.id = s.user_id
@@ -57,6 +58,17 @@ def _enrich_case(conn, case: dict) -> dict:
         (case["id"],),
     ).fetchone()
     case["assigned_surveyor"] = dict(assigned) if assigned else None
+
+    rating = conn.execute(
+        "SELECT rating, comment, created_at, updated_at FROM case_satisfaction_ratings WHERE case_id = ?",
+        (case["id"],),
+    ).fetchone()
+    case["satisfaction_rating"] = dict(rating) if rating else None
+
+    unresolved_messages = conn.execute(
+        "SELECT COUNT(*) AS c FROM complaints WHERE case_id = ? AND status = 'OPEN'", (case["id"],)
+    ).fetchone()["c"]
+    case["unresolved_message_count"] = unresolved_messages
     return case
 
 
@@ -557,6 +569,7 @@ def delete_case(case_id):
             "case_reviews",
             "rework_requests",
             "complaints",
+            "case_satisfaction_ratings",
             "fees",
             "notifications",
             "equipment_assignments",
@@ -657,6 +670,20 @@ def upsert_parcel(case_id):
 
         existing = conn.execute("SELECT * FROM parcels WHERE case_id = ?", (case_id,)).fetchone()
         ts = now_iso()
+
+        # ถ้าผู้ใช้วาง/แก้ไขลิงก์แผนที่ (location_url) ไว้ และไม่ได้กรอกพิกัด lat/lng เองตรงๆ ในคำขอนี้ ลองแยกพิกัด
+        # จากลิงก์ให้อัตโนมัติ (ดู services/gmaps_link.py) เพื่อให้เรื่องนี้ไปปรากฏบนหน้าแผนที่ช่างรังวัด
+        # (field-map.html) ได้โดยไม่ต้องพึ่ง Shapefile — ทำเฉพาะตอนลิงก์เปลี่ยนไปจากเดิมจริงๆ หรือยังไม่เคยดึงพิกัด
+        # ได้เลย (กันการยิง request ไปข้างนอกซ้ำโดยไม่จำเป็นทุกครั้งที่บันทึกฟอร์มนี้ทั้งที่ลิงก์เดิม)
+        location_url = payload.get("location_url")
+        if location_url and "lat" not in payload and "lng" not in payload:
+            existing_url = existing["location_url"] if existing else None
+            existing_lat = existing["lat"] if existing else None
+            if location_url != existing_url or existing_lat is None:
+                derived_lat, derived_lng = extract_coords_from_maps_url(location_url)
+                if derived_lat is not None:
+                    payload = {**payload, "lat": derived_lat, "lng": derived_lng}
+
         if existing is None:
             values = [payload.get(f) for f in PARCEL_FIELDS]
             conn.execute(
@@ -675,6 +702,65 @@ def upsert_parcel(case_id):
         conn.commit()
         row = conn.execute("SELECT * FROM parcels WHERE case_id = ?", (case_id,)).fetchone()
         return ok(dict(row))
+    finally:
+        conn.close()
+
+
+# จำกัดจำนวนแปลงที่ประมวลผลต่อคำขอ — backend/entrypoint.sh ตั้ง gunicorn --timeout 60 วินาที และการตามลิงก์แบบย่อ
+# (maps.app.goo.gl) ไปดู URL ปลายทางจริงแต่ละอันอาจใช้เวลาได้ถึง ~4 วินาที (ดู services/gmaps_link.py) ถ้าประมวลผล
+# ทีเดียวหมดในคำขอเดียวอาจทำให้ worker ถูกฆ่าก่อนตอบกลับ จึงให้ฝั่ง frontend เรียกซ้ำเป็นชุดๆ จนกว่าจะครบแทน
+_BACKFILL_BATCH_SIZE = 15
+
+
+@bp.post("/parcels/backfill-coords")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR)
+def backfill_parcel_coords():
+    """ไล่ดึงพิกัด (lat/lng) จากลิงก์แผนที่ (location_url) ย้อนหลัง ให้กับแปลงที่ดินซึ่งเคยกรอกลิงก์ไว้ก่อนที่ระบบจะมี
+    ฟีเจอร์แยกพิกัดอัตโนมัติ (upsert_parcel ด้านบน) — แปลงเหล่านี้จะไม่มีวันได้พิกัดเองเพราะการแยกพิกัดอัตโนมัติทำงาน
+    เฉพาะตอนบันทึกฟอร์มแปลงใหม่หรือแก้ไขลิงก์เท่านั้น ไม่ได้ไล่ย้อนหลังให้เอง เอนด์พอยต์นี้จึงเปิดให้ผู้ดูแลระบบกดสั่ง
+    ประมวลผลย้อนหลังได้เอง (ดูปุ่มในหน้าแผนที่ช่างรังวัด field-map.html)
+
+    ประมวลผลทีละชุดเล็ก (ดู _BACKFILL_BATCH_SIZE ด้านบน) แล้วคืนจำนวนที่เหลือ (remaining) ให้ฝั่ง frontend เรียกซ้ำวน
+    จนกว่าจะครบ — หมายเหตุ: แปลงที่ไม่เคยกรอกลิงก์แผนที่ไว้เลย (location_url ว่างเปล่า) จะไม่อยู่ในรายการนี้ตั้งแต่แรก
+    เพราะไม่มีอะไรให้ดึง ต้องให้ช่างรังวัดกรอกลิงก์เพิ่มในหน้ารายละเอียดเรื่องก่อนจึงจะปักหมุดได้"""
+    conn = get_connection()
+    try:
+        candidates = conn.execute(
+            """SELECT id, location_url FROM parcels
+               WHERE location_url IS NOT NULL AND location_url != ''
+                 AND (lat IS NULL OR lng IS NULL)
+               ORDER BY updated_at
+               LIMIT ?""",
+            (_BACKFILL_BATCH_SIZE,),
+        ).fetchall()
+
+        updated = 0
+        ts = now_iso()
+        for row in candidates:
+            derived_lat, derived_lng = extract_coords_from_maps_url(row["location_url"])
+            if derived_lat is not None:
+                conn.execute(
+                    "UPDATE parcels SET lat = ?, lng = ?, updated_at = ? WHERE id = ?",
+                    (derived_lat, derived_lng, ts, row["id"]),
+                )
+                updated += 1
+        conn.commit()
+
+        remaining = conn.execute(
+            """SELECT COUNT(*) AS c FROM parcels
+               WHERE location_url IS NOT NULL AND location_url != ''
+                 AND (lat IS NULL OR lng IS NULL)"""
+        ).fetchone()["c"]
+
+        return ok(
+            {
+                "processed": len(candidates),
+                "updated": updated,
+                "failed": len(candidates) - updated,
+                "remaining": remaining,
+            }
+        )
     finally:
         conn.close()
 
@@ -867,6 +953,125 @@ def list_assignments(case_id):
             (case_id,),
         ).fetchall()
         return ok([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# ข้อความติดตาม/สอบถามจากประชาชน (ส่งเข้ามาจากหน้าสาธารณะ frontend/track.html ผ่าน
+# POST /api/v1/public/track/message — ดู blueprints/public_track.py) ใช้ตาราง complaints ร่วมกับข้อร้องเรียน
+# ทั่วไป (complaint_type แยกชนิด: "INQUIRY" = ข้อความสอบถาม/ติดตามเรื่องจากหน้านี้)
+# ---------------------------------------------------------------------------
+@bp.get("/<case_id>/messages")
+@login_required
+def list_case_messages(case_id):
+    """ข้อความ/ข้อร้องเรียนทั้งหมดของเรื่องนี้ เรียงจากล่าสุดไปเก่าสุด — ทุกบทบาทที่มองเห็นเรื่องนี้ดูได้"""
+    conn = get_connection()
+    try:
+        where_sql, params = scope_case_filter(conn, g.current_user)
+        visible = conn.execute(f"SELECT 1 FROM survey_cases WHERE id = ? AND {where_sql}", [case_id] + params).fetchone()
+        if visible is None:
+            return err("ไม่พบเรื่องที่ระบุ หรือไม่มีสิทธิ์เข้าถึง", 404)
+
+        rows = conn.execute(
+            """SELECT c.*, u.full_name AS resolved_by_name, r.full_name AS replied_by_name
+               FROM complaints c
+               LEFT JOIN users u ON u.id = c.resolved_by
+               LEFT JOIN users r ON r.id = c.replied_by
+               WHERE c.case_id = ?
+               ORDER BY c.created_at DESC""",
+            (case_id,),
+        ).fetchall()
+        return ok([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
+def _check_message_access(conn, case_id: str) -> bool:
+    """เช็คว่า current_user แตะข้อความของเรื่องนี้ได้ไหม — ใช้ร่วมกันทั้ง resolve และ reply โดยแยกเงื่อนไข
+    ช่างรังวัด (ต้องเป็นผู้รับมอบหมายเรื่องนี้อยู่จริง ผ่าน case_assignments) ออกจากบทบาทอื่นๆ (ใช้ is_office_in_user_scope
+    ตามขอบเขตสำนักงาน/จังหวัดตามปกติ) — ดูรูปแบบเดียวกันใน update_status() ด้านบน"""
+    case = conn.execute("SELECT office_id FROM survey_cases WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return False
+    if g.current_user["role"] == Role.SURVEYOR:
+        surveyor = get_surveyor_profile(conn, g.current_user["id"])
+        owns_case = surveyor and conn.execute(
+            "SELECT 1 FROM case_assignments WHERE case_id = ? AND surveyor_id = ? AND is_active = 1",
+            (case_id, surveyor["id"]),
+        ).fetchone()
+        return bool(owns_case)
+    return is_office_in_user_scope(conn, g.current_user, case["office_id"])
+
+
+@bp.patch("/messages/<message_id>/resolve")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN, Role.SUPERVISOR, Role.BRANCH_ADMIN)
+def resolve_case_message(message_id):
+    """ทำเครื่องหมายว่าดำเนินการแล้วโดยไม่ตอบกลับเป็นข้อความ (เช่น ติดต่อกลับทางโทรศัพท์แล้ว หรือข้อความซ้ำ/ไม่ต้องตอบ)
+    — ถ้าต้องการพิมพ์คำตอบให้ประชาชนเห็นในหน้าติดตามงานด้วย ใช้ /messages/<id>/reply แทน (จะปิดเรื่องให้อัตโนมัติ)"""
+    conn = get_connection()
+    try:
+        msg = conn.execute("SELECT * FROM complaints WHERE id = ?", (message_id,)).fetchone()
+        if msg is None:
+            return err("ไม่พบข้อความที่ระบุ", 404)
+        if not _check_message_access(conn, msg["case_id"]):
+            return err("ไม่มีสิทธิ์เข้าถึงข้อมูลนี้", 403)
+
+        conn.execute(
+            "UPDATE complaints SET status = 'RESOLVED', resolved_by = ?, resolved_at = ? WHERE id = ?",
+            (g.current_user["id"], now_iso(), message_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM complaints WHERE id = ?", (message_id,)).fetchone()
+        return ok(dict(row))
+    finally:
+        conn.close()
+
+
+_REPLY_MAX_LEN = 1000
+
+
+@bp.patch("/messages/<message_id>/reply")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN, Role.SUPERVISOR, Role.BRANCH_ADMIN, Role.SURVEYOR)
+def reply_case_message(message_id):
+    """พิมพ์คำตอบกลับข้อความของประชาชน — ให้ช่างรังวัดเจ้าของเรื่องตอบเองได้ด้วย (ผู้ดูแลข้อมูลตรงกับเรื่องมากที่สุด)
+    ไม่ใช่แค่บทบาทผู้บริหาร/หัวหน้าเหมือน resolve เดิม คำตอบจะไปแสดงในหน้าติดตามงานสาธารณะ (track.html) ให้ประชาชน
+    เห็นทันที และถือว่าข้อความนี้ได้รับการดำเนินการแล้ว (ปิดเรื่องให้อัตโนมัติพร้อมกัน ไม่ต้องกดปุ่ม resolve ซ้ำ)"""
+    payload = request.get_json(silent=True) or {}
+    reply_text = (payload.get("reply") or "").strip()
+    if not reply_text:
+        return err("กรุณาพิมพ์ข้อความตอบกลับ")
+    if len(reply_text) > _REPLY_MAX_LEN:
+        return err(f"ข้อความยาวเกินไป (ไม่เกิน {_REPLY_MAX_LEN} ตัวอักษร)")
+
+    conn = get_connection()
+    try:
+        msg = conn.execute("SELECT * FROM complaints WHERE id = ?", (message_id,)).fetchone()
+        if msg is None:
+            return err("ไม่พบข้อความที่ระบุ", 404)
+        if not _check_message_access(conn, msg["case_id"]):
+            return err("ไม่มีสิทธิ์เข้าถึงข้อมูลนี้", 403)
+
+        ts = now_iso()
+        conn.execute(
+            """UPDATE complaints
+               SET reply_text = ?, replied_by = ?, replied_at = ?,
+                   status = 'RESOLVED', resolved_by = ?, resolved_at = ?
+               WHERE id = ?""",
+            (reply_text, g.current_user["id"], ts, g.current_user["id"], ts, message_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            """SELECT c.*, u.full_name AS resolved_by_name, r.full_name AS replied_by_name
+               FROM complaints c
+               LEFT JOIN users u ON u.id = c.resolved_by
+               LEFT JOIN users r ON r.id = c.replied_by
+               WHERE c.id = ?""",
+            (message_id,),
+        ).fetchone()
+        return ok(dict(row))
     finally:
         conn.close()
 

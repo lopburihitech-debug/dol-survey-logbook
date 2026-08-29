@@ -8,6 +8,82 @@
 <link rel="icon" type="image/png" href="/img/favicon-16.png" sizes="16x16">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="stylesheet" href="/css/style.css">
+<style>
+  /* แชทกับเจ้าหน้าที่ (พูดคุยจริงระหว่างประชาชนกับเจ้าหน้าที่ ผ่านฟีเจอร์ข้อความที่มีอยู่แล้วในระบบ
+     ไม่ใช่บอทตอบอัตโนมัติ ไม่พึ่งบริการ AI ภายนอก) — สไตล์ผูกไว้เฉพาะหน้านี้เพราะเป็นวิดเจ็ตเฉพาะของหน้าติดตามงาน
+     ไม่กระทบ css/style.css ที่ใช้ร่วมกับหน้าอื่นทั้งระบบ */
+  /* ปุ่มลอย = กล่องเดียวรวมป้ายข้อความ "คุยกับเจ้าหน้าที่" + ไอคอนวงกลม เพื่อให้เด่นชัดและสื่อความหมายชัดเจน
+     ว่ากดแล้วคุยกับ "คน" จริงๆ ไม่ใช่บอท ใช้สีส้มสะท้อนแสง (โทนเดียวกับเสื้อช่างในไอคอน) ตัดกับพื้นเขียวของหน้า
+     ให้สะดุดตา บวกวงแหวนสั่นเบาๆ (pulse) ดึงสายตาช่วงแรกที่ปุ่มปรากฏ */
+  #chatFabWrap {
+    position: fixed; right: 20px; bottom: 20px; z-index: 40;
+    display: none; align-items: center; gap: 10px;
+  }
+  #chatFabLabel {
+    background: #F27405; color: #fff; font-size: 13px; font-weight: 700; padding: 10px 16px;
+    border-radius: 999px; box-shadow: var(--shadow-md); cursor: pointer; white-space: nowrap;
+    animation: chatFabLabelIn 0.4s ease-out;
+  }
+  #chatFabLabel:hover { background: #D96504; }
+  #chatFab {
+    position: relative; flex-shrink: 0;
+    width: 60px; height: 60px; border-radius: 50%; border: 3px solid #F27405; cursor: pointer;
+    background: #fff; padding: 0;
+    box-shadow: var(--shadow-md);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s;
+    animation: chatFabPop 0.5s ease-out;
+  }
+  #chatFab:hover { transform: scale(1.07); }
+  #chatFab:active { transform: scale(0.94); }
+  #chatFab img { width: 42px; height: 42px; object-fit: contain; pointer-events: none; }
+  #chatFab .chat-fab-ring {
+    position: absolute; inset: -3px; border-radius: 50%; border: 3px solid #F27405;
+    animation: chatFabPing 2.2s cubic-bezier(0,0,0.2,1) infinite; pointer-events: none;
+  }
+  @keyframes chatFabLabelIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes chatFabPop { 0% { transform: scale(0); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+  @keyframes chatFabPing { 0% { transform: scale(1); opacity: 0.7; } 75%, 100% { transform: scale(1.5); opacity: 0; } }
+  #chatPanel {
+    position: fixed; right: 20px; bottom: 88px; z-index: 41; width: 340px; max-width: calc(100vw - 32px);
+    height: 460px; max-height: calc(100vh - 120px); background: #fff; border-radius: 14px;
+    box-shadow: var(--shadow-md); display: none; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--border, #e2e8f0);
+  }
+  #chatPanel.open { display: flex; }
+  .chat-head {
+    background: var(--primary); color: #fff; padding: 12px 14px; display: flex;
+    align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .chat-head .title { font-size: 14px; font-weight: 700; }
+  .chat-head .sub { font-size: 11px; opacity: 0.85; margin-top: 1px; }
+  .chat-head button { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; line-height: 1; padding: 4px; }
+  .chat-body { flex: 1; overflow-y: auto; padding: 12px; background: #F7F9FB; }
+  .chat-msg { max-width: 85%; margin-bottom: 10px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+  .chat-msg.bot { background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px 10px 10px 2px; padding: 8px 11px; }
+  .chat-msg.bot.pending { color: #8a95a3; font-style: italic; }
+  .chat-msg.user { background: var(--primary); color: #fff; border-radius: 10px 10px 2px 10px; padding: 8px 11px; margin-left: auto; }
+  .chat-msg .msg-time { font-size: 10px; opacity: 0.75; margin-top: 4px; font-style: normal; }
+  .chat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+  .chat-chip {
+    font-size: 12px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--primary);
+    background: #fff; color: var(--primary); cursor: pointer;
+  }
+  .chat-chip:hover { background: var(--primary); color: #fff; }
+  .chat-notice { padding: 8px 12px; font-size: 12px; color: #b5760a; background: #FFF7E6; border-top: 1px solid var(--border, #e2e8f0); }
+  .chat-input-row { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--border, #e2e8f0); flex-shrink: 0; background: #fff; }
+  .chat-input-row textarea {
+    flex: 1; border: 1px solid var(--border, #e2e8f0); border-radius: 16px; padding: 8px 14px; font-size: 13px;
+    font-family: inherit; resize: none; max-height: 96px; overflow-y: auto; line-height: 1.4;
+  }
+  .chat-input-row button {
+    border: none; background: var(--primary); color: #fff; border-radius: 50%; width: 36px; height: 36px;
+    flex-shrink: 0; cursor: pointer; font-size: 15px;
+  }
+  .chat-input-row button:hover { background: var(--primary-dark); }
+  .chat-input-row button:disabled { background: #b9c2cc; cursor: default; }
+  @media print { #chatFabWrap, #chatPanel { display: none !important; } }
+</style>
 </head>
 <body>
 <div class="track-wrap">
@@ -62,22 +138,54 @@
       <div class="info-grid" style="margin-bottom:16px;">
         <div><div class="k">ผู้ขอ</div><div id="rRequester"></div></div>
         <div><div class="k">สำนักงานที่ดิน</div><div id="rOffice"></div></div>
+        <div><div class="k">ช่างรังวัดที่รับผิดชอบ</div><div id="rSurveyor"></div></div>
         <div><div class="k">วันที่รับเรื่อง</div><div id="rReceived"></div></div>
         <div><div class="k">วันนัดรังวัด</div><div id="rAppointment"></div></div>
-        <div><div class="k">กำหนดแล้วเสร็จ</div><div id="rDue"></div></div>
       </div>
 
       <h2 style="font-size:14px;">ความเคลื่อนไหวของคำขอ</h2>
       <ul class="timeline" id="rTimeline"></ul>
 
-      <div class="track-back" style="margin-top:16px;">
+      <div id="satisfactionSection" style="display:none;"></div>
+
+      <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border, #e2e8f0); text-align:center;">
+        <p class="subtitle" style="margin:0;">มีคำถามเกี่ยวกับคำขอนี้ หรือต้องการแจ้งข้อมูลเพิ่มเติม? แตะปุ่ม "คุยกับเจ้าหน้าที่" มุมขวาล่างของหน้านี้ เพื่อพูดคุยกับเจ้าหน้าที่ได้โดยตรง</p>
+      </div>
+
+      <div class="track-back" style="margin-top:16px; display:flex; justify-content:center; gap:16px; flex-wrap:wrap;">
         <a id="searchAgainBtn" style="color:var(--primary);">&larr; ค้นหาคำขออื่น</a>
+        <a id="printBtn" style="color:var(--primary);">🖨️ พิมพ์หน้านี้</a>
       </div>
     </div>
 
     <div class="track-back">
       <a href="/login.html">เข้าสู่ระบบสำหรับเจ้าหน้าที่</a>
     </div>
+  </div>
+</div>
+
+<!-- แชทกับเจ้าหน้าที่ — แสดงเฉพาะตอนค้นหาเจอคำขอแล้ว (ต้องมีข้อมูลเรื่องให้อ้างอิง) ป้ายข้อความ + ปุ่มลอย + แผงแชท
+     รูปไอคอนช่างฝังเป็น data URI ในตัว (ไม่พึ่งไฟล์ภายนอก/อินเทอร์เน็ต ตามหลักการเดิมของทั้งระบบ) -->
+<div id="chatFabWrap">
+  <div id="chatFabLabel" title="แชทกับเจ้าหน้าที่เกี่ยวกับคำขอนี้">💬 คุยกับเจ้าหน้าที่</div>
+  <button type="button" id="chatFab" title="แชทกับเจ้าหน้าที่เกี่ยวกับคำขอนี้" aria-label="เปิดแชทกับเจ้าหน้าที่">
+    <span class="chat-fab-ring"></span>
+    <img src="data:image/png;base64,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" alt="ไอคอนช่างรังวัด">
+  </button>
+</div>
+<div id="chatPanel">
+  <div class="chat-head">
+    <div>
+      <div class="title">แชทกับเจ้าหน้าที่</div>
+      <div class="sub" id="chatHeadSub">พูดคุยเกี่ยวกับคำขอของท่าน</div>
+    </div>
+    <button type="button" id="chatCloseBtn" aria-label="ปิด">&times;</button>
+  </div>
+  <div class="chat-body" id="chatBody"></div>
+  <div id="chatNotice" class="chat-notice" style="display:none;"></div>
+  <div class="chat-input-row">
+    <textarea id="chatInput" rows="1" placeholder="พิมพ์ข้อความถึงเจ้าหน้าที่..." autocomplete="off"></textarea>
+    <button type="button" id="chatSendBtn" aria-label="ส่ง">&#10148;</button>
   </div>
 </div>
 
@@ -123,6 +231,255 @@ function renderStageBar(stage, isCancelled) {
 function statusBadgeClass(status, isCancelled) {
   if (isCancelled) return "badge status-CANCELLED";
   return "badge status-" + status;
+}
+
+// เก็บปัจจัยค้นหาที่ใช้ล่าสุด (สำนักงาน/เลข รว.12/เบอร์โทร 4 ตัวท้าย) ไว้ใช้ซ้ำตอนส่งข้อความ/ให้คะแนนความพึงพอใจ
+// โดยไม่ต้องให้ผู้ใช้กรอกซ้ำ — ฝั่งเซิร์ฟเวอร์ยังตรวจสอบทั้ง 3 ปัจจัยนี้ซ้ำทุกครั้งอยู่ดี (ดู _lookup_case ฝั่ง
+// backend) ค่านี้จึงเป็นแค่ความสะดวกฝั่ง UI ไม่ใช่การอนุญาตที่แท้จริง
+let lastQuery = null;
+
+const SATISFACTION_LEVELS = [
+  { v: 1, emoji: "😞", label: "ไม่พอใจมาก" },
+  { v: 2, emoji: "🙁", label: "ไม่พอใจ" },
+  { v: 3, emoji: "😐", label: "ปานกลาง" },
+  { v: 4, emoji: "🙂", label: "พอใจ" },
+  { v: 5, emoji: "😄", label: "พอใจมาก" },
+];
+
+function renderSatisfactionSection(data) {
+  const box = document.getElementById("satisfactionSection");
+  if (!data.can_rate_satisfaction) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.style.display = "block";
+
+  if (data.satisfaction_rating) {
+    const lvl = SATISFACTION_LEVELS.find((s) => s.v === data.satisfaction_rating.rating) || SATISFACTION_LEVELS[2];
+    box.innerHTML = `
+      <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border, #e2e8f0); text-align:center;">
+        <div style="font-size:40px; line-height:1;">${lvl.emoji}</div>
+        <div style="font-weight:600; margin:6px 0 2px;">ขอบคุณสำหรับการให้คะแนน (${lvl.label})</div>
+        <a id="editRatingLink" style="color:var(--primary); font-size:13px; cursor:pointer;">แก้ไขคะแนน</a>
+      </div>`;
+    document.getElementById("editRatingLink").addEventListener("click", () => {
+      data.satisfaction_rating = null;
+      renderSatisfactionSection(data);
+    });
+    return;
+  }
+
+  box.innerHTML = `
+    <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border, #e2e8f0);">
+      <h2 style="font-size:14px; margin-bottom:2px;">งานรังวัดเสร็จสิ้นแล้ว — พึงพอใจกับบริการมากน้อยเพียงใด?</h2>
+      <div class="smiley-rating" id="smileyRow">
+        ${SATISFACTION_LEVELS.map(
+          (s) => `<button type="button" class="smiley-btn" data-v="${s.v}" title="${s.label}">
+            <span>${s.emoji}</span><span class="lbl">${s.label}</span>
+          </button>`
+        ).join("")}
+      </div>
+      <textarea id="satisfactionComment" rows="2" placeholder="ความคิดเห็นเพิ่มเติม (ไม่บังคับ)" style="width:100%; margin-top:8px;"></textarea>
+      <div id="satisfactionError" class="error-text" style="display:none; margin-top:6px;"></div>
+    </div>`;
+
+  let selected = null;
+  const row = document.getElementById("smileyRow");
+  row.querySelectorAll(".smiley-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      selected = parseInt(btn.dataset.v, 10);
+      row.querySelectorAll(".smiley-btn").forEach((b) => b.classList.toggle("selected", b === btn));
+
+      const errBox = document.getElementById("satisfactionError");
+      errBox.style.display = "none";
+      try {
+        const res = await fetch("/api/v1/public/track/satisfaction", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...lastQuery,
+            rating: selected,
+            comment: document.getElementById("satisfactionComment").value.trim(),
+          }),
+        });
+        const resData = await res.json();
+        if (!res.ok) throw new Error((resData.error && resData.error.message) || "ส่งคะแนนไม่สำเร็จ กรุณาลองใหม่");
+        data.satisfaction_rating = { rating: selected };
+        renderSatisfactionSection(data);
+      } catch (e) {
+        errBox.textContent = e.message;
+        errBox.style.display = "block";
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// แชทกับเจ้าหน้าที่ — พูดคุยจริงระหว่างประชาชนกับเจ้าหน้าที่สำนักงานที่ดิน (ไม่ใช่บอทตอบอัตโนมัติ)
+// ใช้ backend เดิมที่มีอยู่แล้ว (POST /api/v1/public/track/message) เจ้าหน้าที่ตอบกลับผ่านระบบหลังบ้าน
+// แล้วคำตอบจะแสดงในนี้เมื่อประชาชนกลับมาค้นหาคำขอนี้อีกครั้ง ยังคงมาตรการป้องกันการใช้งานเกินสมควรเดิมทั้งหมด
+// (จำกัดจำนวนครั้ง/วัน, เวลาหน่วงระหว่างข้อความ, กันส่งข้อความซ้ำ) — ดูรายละเอียดที่ backend/blueprints/public_track.py
+// ---------------------------------------------------------------------------
+let trackData = null;        // ข้อมูลคำขอปัจจุบันที่ค้นหาเจอ (จาก GET /track) — null = ยังไม่มีคำขอให้แชท
+let lastSentMessage = null;  // ข้อความล่าสุดที่ส่งสำเร็จ (ใช้เตือนล่วงหน้าถ้าจะพิมพ์ซ้ำ)
+let cooldownTimer = null;    // interval id ของตัวนับถอยหลังก่อนส่งข้อความถัดไปได้
+let currentMessages = [];    // ประวัติข้อความ+คำตอบของเรื่องที่กำลังดูอยู่ (จาก data.messages ตอนค้นหา)
+
+const CHAT_SUGGESTIONS = [
+  "สอบถามความคืบหน้าคำขอ",
+  "ขอเลื่อนนัดหมายรังวัด",
+  "แจ้งข้อมูล/เอกสารเพิ่มเติม",
+];
+
+function escapeChatText(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderChatThread() {
+  const body = document.getElementById("chatBody");
+  if (!trackData) {
+    body.innerHTML = "";
+    return;
+  }
+  let html = `<div class="chat-msg bot">สวัสดีค่ะ ช่องทางนี้ใช้พูดคุยกับเจ้าหน้าที่เกี่ยวกับคำขอเลขที่ ${trackData.case_code} โดยตรง พิมพ์ข้อความด้านล่างได้เลยค่ะ เจ้าหน้าที่จะตอบกลับในนี้ หรือติดต่อกลับตามเบอร์โทรศัพท์ที่ให้ไว้ตอนยื่นคำขอ</div>`;
+  if (currentMessages.length) {
+    html += currentMessages
+      .map((m) => {
+        const hasReply = !!(m.reply && m.reply.trim());
+        let part = `<div class="chat-msg user">${escapeChatText(m.message)}<div class="msg-time">${fmtDate(m.created_at)}</div></div>`;
+        part += hasReply
+          ? `<div class="chat-msg bot">${escapeChatText(m.reply)}<div class="msg-time">เจ้าหน้าที่ตอบกลับ • ${fmtDate(m.replied_at)}</div></div>`
+          : `<div class="chat-msg bot pending">⏳ รอเจ้าหน้าที่ตอบกลับ</div>`;
+        return part;
+      })
+      .join("");
+  } else {
+    html += `<div class="chat-chips" id="chatSuggestions">${CHAT_SUGGESTIONS.map(
+      (s) => `<button type="button" class="chat-chip" data-text="${s}">${s}</button>`
+    ).join("")}</div>`;
+  }
+  body.innerHTML = html;
+  body.scrollTop = body.scrollHeight;
+  body.querySelectorAll(".chat-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("chatInput");
+      input.value = btn.dataset.text;
+      autoGrowChatInput();
+      input.focus();
+    });
+  });
+}
+
+function openChatPanel() {
+  document.getElementById("chatPanel").classList.add("open");
+  document.getElementById("chatFabLabel").style.display = "none"; // ซ่อนป้ายข้อความตอนแผงแชทเปิดอยู่ กันดูรก
+  document.getElementById("chatHeadSub").textContent = trackData ? `คำขอเลขที่ ${trackData.case_code}` : "พูดคุยเกี่ยวกับคำขอของท่าน";
+  renderChatThread();
+  document.getElementById("chatInput").focus();
+}
+document.getElementById("chatFab").addEventListener("click", openChatPanel);
+document.getElementById("chatFabLabel").addEventListener("click", openChatPanel);
+
+document.getElementById("chatCloseBtn").addEventListener("click", () => {
+  document.getElementById("chatPanel").classList.remove("open");
+  document.getElementById("chatFabLabel").style.display = ""; // ปิดแผงแล้วให้ป้ายข้อความกลับมาเชิญชวนอีกครั้ง
+});
+
+function autoGrowChatInput() {
+  const input = document.getElementById("chatInput");
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 96) + "px";
+}
+
+function showChatNotice(text) {
+  const notice = document.getElementById("chatNotice");
+  notice.textContent = text;
+  notice.style.display = "block";
+}
+
+function sendChatMessage() {
+  const input = document.getElementById("chatInput");
+  const btn = document.getElementById("chatSendBtn");
+  const notice = document.getElementById("chatNotice");
+  const message = input.value.trim();
+  notice.style.display = "none";
+
+  if (!message) return;
+  if (lastSentMessage && message === lastSentMessage) {
+    showChatNotice("ข้อความนี้เหมือนกับข้อความล่าสุดที่ส่งไปแล้ว เจ้าหน้าที่ได้รับแล้ว กรุณารอการติดต่อกลับ หรือแก้ไขข้อความก่อนส่งอีกครั้ง");
+    return;
+  }
+
+  btn.disabled = true;
+  (async () => {
+    try {
+      const res = await fetch("/api/v1/public/track/message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...lastQuery, message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error((data.error && data.error.message) || "ส่งข้อความไม่สำเร็จ กรุณาลองใหม่");
+      lastSentMessage = message;
+      input.value = "";
+      autoGrowChatInput();
+      currentMessages.push({ message, created_at: new Date().toISOString(), reply: null, replied_at: null });
+      renderChatThread();
+      startChatCooldown(data.cooldown_sec || 60);
+    } catch (e) {
+      showChatNotice(e.message);
+      btn.disabled = false;
+    }
+  })();
+}
+document.getElementById("chatSendBtn").addEventListener("click", sendChatMessage);
+document.getElementById("chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+document.getElementById("chatInput").addEventListener("input", () => {
+  autoGrowChatInput();
+  document.getElementById("chatNotice").style.display = "none";
+});
+
+function startChatCooldown(seconds) {
+  const btn = document.getElementById("chatSendBtn");
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  let remaining = seconds;
+  const tick = () => {
+    if (remaining <= 0) {
+      clearInterval(cooldownTimer);
+      cooldownTimer = null;
+      btn.disabled = false;
+      btn.textContent = "➤";
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = String(remaining);
+    remaining -= 1;
+  };
+  tick();
+  cooldownTimer = setInterval(tick, 1000);
+}
+
+function resetChatWidget() {
+  trackData = null;
+  lastSentMessage = null;
+  if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+  const btn = document.getElementById("chatSendBtn");
+  btn.disabled = false;
+  btn.textContent = "➤";
+  const input = document.getElementById("chatInput");
+  input.value = "";
+  input.style.height = "auto";
+  document.getElementById("chatNotice").style.display = "none";
+  document.getElementById("chatFabWrap").style.display = "none";
+  document.getElementById("chatFabLabel").style.display = ""; // เผื่อไว้ถูกซ่อนจากตอนเปิดแผงแชทค้างไว้ก่อนรีเซ็ต
+  document.getElementById("chatPanel").classList.remove("open");
+  document.getElementById("chatBody").innerHTML = "";
 }
 
 async function loadOffices() {
@@ -179,9 +536,9 @@ document.getElementById("trackForm").addEventListener("submit", async (e) => {
 
     document.getElementById("rRequester").textContent = data.requester_name || "-";
     document.getElementById("rOffice").textContent = data.office_name || "-";
+    document.getElementById("rSurveyor").textContent = data.surveyor_name || "ยังไม่มอบหมาย";
     document.getElementById("rReceived").textContent = fmtDateOnly(data.received_date);
     document.getElementById("rAppointment").textContent = fmtDateOnly(data.appointment_date);
-    document.getElementById("rDue").textContent = fmtDateOnly(data.due_date);
 
     const timelineEl = document.getElementById("rTimeline");
     if (data.timeline && data.timeline.length) {
@@ -193,6 +550,16 @@ document.getElementById("trackForm").addEventListener("submit", async (e) => {
     } else {
       timelineEl.innerHTML = `<li>ยังไม่มีความเคลื่อนไหว</li>`;
     }
+
+    lastQuery = { office_id: officeId, case_code: caseCode, phone_last4: phoneLast4 };
+    currentMessages = data.messages || [];
+    renderSatisfactionSection(data);
+
+    // เปิดใช้งานแชทกับเจ้าหน้าที่ — ต้องรีเซ็ตทุกครั้งที่ค้นหาใหม่ เผื่อผู้ใช้ค้นหาคำขออื่นต่อจากที่เคยเปิดแชทไว้แล้ว
+    // (ไม่งั้นแชทจะยังอ้างอิงข้อมูลคำขอเก่าอยู่ ทั้งที่มองเห็นผลค้นหาใหม่แล้ว)
+    resetChatWidget();
+    trackData = data;
+    document.getElementById("chatFabWrap").style.display = "flex";
 
     document.getElementById("searchCard").style.display = "none";
     document.getElementById("resultCard").style.display = "block";
@@ -212,6 +579,14 @@ document.getElementById("searchAgainBtn").addEventListener("click", () => {
   document.getElementById("phoneLast4").value = "";
   document.getElementById("errorBox").style.display = "none";
   document.getElementById("caseCode").focus();
+  lastQuery = null;
+  currentMessages = [];
+  resetChatWidget();
+});
+
+document.getElementById("printBtn").addEventListener("click", (e) => {
+  e.preventDefault();
+  window.print();
 });
 </script>
 </body>

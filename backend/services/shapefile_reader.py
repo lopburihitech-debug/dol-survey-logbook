@@ -17,6 +17,7 @@
     เพียงเพื่อวาดตำแหน่งหมุดรอบขอบเขต ไม่ได้ใช้เป็น GIS เต็มรูปแบบที่ต้องแยกแยะ fill/hole)
 """
 import io
+import math
 import re
 import struct
 import zipfile
@@ -28,6 +29,26 @@ _SUPPORTED_TYPES = {SHAPE_TYPE_POINT, SHAPE_TYPE_POLYGON}
 
 class ShapefileParseError(Exception):
     """ข้อผิดพลาดจากการอ่านไฟล์ shapefile ที่แนบมา — ข้อความเป็นภาษาไทยพร้อมส่งกลับให้ผู้ใช้เห็นตรงๆ ได้เลย"""
+
+
+def _order_points_by_angle(points):
+    """เรียงจุดใหม่ตามมุม (angle) รอบจุดศูนย์ถ่วง (centroid) ของกลุ่ม เพื่อให้เส้นที่ลากเชื่อมจุดตามลำดับ
+    (ดู frontend/case.html renderMarkerMap และ services/shapefile_writer.py) กลายเป็นเส้นขอบเขตปิดที่ไม่ตัดกันไปมา
+
+    ใช้เฉพาะกับไฟล์ shapefile ชนิด Point เท่านั้น — แต่ละจุดในไฟล์ชนิดนี้คือ record อิสระของตัวเอง ลำดับที่ปรากฏใน
+    ไฟล์จึงเป็นแค่ลำดับที่โปรแกรมต้นทาง (เช่น GPS logger หรือโปรแกรม GIS) บันทึก/ export ออกมา ไม่ได้รับประกันว่า
+    เป็นลำดับ "เดินรอบขอบเขตแปลง" จริง — ถ้านำมาเชื่อมเส้นตามลำดับเดิมตรงๆ จึงมักได้เส้นไขว้กันไปมาแบบดาวกระจาย
+    (ปัญหาที่ผู้ใช้แจ้งเข้ามา) ต่างจากไฟล์ชนิด Polygon ที่ตามสเปกมาตรฐานของ shapefile ลำดับจุดใน ring ต้องเป็น
+    ลำดับเดินรอบขอบเขตอยู่แล้วเสมอ (_read_shp_shapes จึงคงลำดับเดิมไว้ ไม่เรียงซ้ำ)
+
+    วิธีนี้ใช้ได้ผลดีกับแปลงที่ดินทั่วไปซึ่งเป็นรูปหลายเหลี่ยมนูนหรือใกล้นูน (พบมากที่สุดในทางปฏิบัติ) — สำหรับแปลง
+    รูปเว้ามาก (concave) ผลลัพธ์อาจไม่ตรงกับขอบเขตจริง 100% แต่ยังคงดีกว่าลำดับสุ่มจากไฟล์มาก และผู้ใช้ยังแก้ไข
+    ลำดับ/ตำแหน่งหมุดแต่ละจุดในหน้าเคสได้เองในภายหลังอยู่แล้ว"""
+    if len(points) < 3:
+        return points
+    cx = sum(p[0] for p in points) / len(points)
+    cy = sum(p[1] for p in points) / len(points)
+    return sorted(points, key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
 
 
 def _dedupe_closing_point(ring):
@@ -142,6 +163,9 @@ def extract_points_from_shapefile_zip(zip_bytes: bytes) -> dict:
     point_groups = [g for g in point_groups if g]  # กันกลุ่มว่าง (ไม่ควรเกิด แต่กันไว้)
     if not point_groups:
         raise ShapefileParseError("ไม่พบข้อมูลจุดพิกัดใดๆ ในไฟล์ shapefile ที่แนบมา")
+    if shape_type == SHAPE_TYPE_POINT:
+        # ดูเหตุผลใน _order_points_by_angle — เฉพาะไฟล์ชนิด Point เท่านั้นที่ต้องเรียงลำดับใหม่
+        point_groups = [_order_points_by_angle(g) for g in point_groups]
 
     prj_name = next((n for n in zf.namelist() if n.lower().endswith(".prj")), None)
     prj_text = zf.read(prj_name).decode("utf-8", errors="ignore") if prj_name else None

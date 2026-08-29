@@ -79,7 +79,10 @@ function renderOfficeBarChart(container, rows) {
 }
 
 // กราฟโดนัทสัดส่วนสถานะงานทั้งหมด พร้อม legend บอกจำนวน/เปอร์เซ็นต์ — segments: [{label, count, color}]
-function renderDonutChart(container, segments) {
+// centerLabel: ข้อความใต้ตัวเลขรวมกลางวงกลม (ไม่ระบุ = "งานทั้งหมด" ตามการใช้งานเดิมในหน้า Dashboard ผู้ดูแลระบบ
+// — พารามิเตอร์นี้เพิ่มทีหลังแบบ optional เพื่อให้หน้าอื่น เช่น โปรไฟล์ช่างรังวัด เรียกใช้กับข้อมูลชุดอื่น เช่น
+// การกระจายคะแนนความพึงพอใจ ได้โดยไม่กระทบของเดิม)
+function renderDonutChart(container, segments, centerLabel) {
   const nonZero = segments.filter((s) => s.count > 0);
   const total = nonZero.reduce((sum, s) => sum + s.count, 0);
   if (total === 0) {
@@ -117,9 +120,42 @@ function renderDonutChart(container, segments) {
       <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="flex-shrink:0;">
         ${arcs}
         <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="23" font-weight="700" fill="var(--text)">${total}</text>
-        <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11" fill="var(--text-muted)">งานทั้งหมด</text>
+        <text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${centerLabel || "งานทั้งหมด"}</text>
       </svg>
       <div style="flex:1; min-width:210px;">${legend}</div>
     </div>
+  `;
+}
+
+// กราฟแท่งแนวนอนแสดงแนวโน้มตามช่วงเวลา (เช่น จำนวนงานที่ปิดสำเร็จรายเดือนของช่างรังวัดคนหนึ่ง — หน้าโปรไฟล์ช่างรังวัด
+// surveyor-profile.html) เรียงตามลำดับเวลาเก่า->ใหม่ตามที่ส่งเข้ามาเสมอ (ไม่เรียงตามขนาดเหมือน renderOfficeBarChart
+// ด้านบน เพราะจุดประสงค์คือดู "แนวโน้ม" ตามเวลา ไม่ใช่เปรียบเทียบอันดับ) — rows: [{label, count}]
+function renderMonthlyTrendChart(container, rows) {
+  if (!rows || rows.length === 0) {
+    container.innerHTML = `<div class="empty-state">ยังไม่มีข้อมูล</div>`;
+    return;
+  }
+  const maxVal = Math.max(...rows.map((r) => r.count), 1);
+  const barH = 20, gap = 12, labelW = 90, chartW = 320, rowH = barH + gap;
+  const svgW = labelW + chartW + 40;
+  const svgH = rows.length * rowH + 6;
+  const scale = chartW / maxVal;
+
+  const parts = rows
+    .map((r, i) => {
+      const y = i * rowH + 4;
+      const w = r.count > 0 ? Math.max(r.count * scale, 2) : 0;
+      return `
+      <text x="${labelW - 10}" y="${y + barH / 2 + 4}" text-anchor="end" font-size="12" fill="var(--text)">${r.label}</text>
+      <rect x="${labelW}" y="${y}" width="${w}" height="${barH}" rx="3" fill="var(--primary)"></rect>
+      <text x="${labelW + w + 8}" y="${y + barH / 2 + 4}" font-size="12" font-weight="700" fill="var(--text)">${r.count}</text>
+    `;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${svgW} ${svgH}" width="100%" height="${svgH}" style="max-width:520px; display:block;">
+      ${parts}
+    </svg>
   `;
 }
