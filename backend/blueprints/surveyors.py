@@ -19,7 +19,7 @@ ACTIVE_CASE_COUNT_SQL = """
     (SELECT COUNT(*) FROM case_assignments ca
      JOIN survey_cases sc ON sc.id = ca.case_id
      WHERE ca.surveyor_id = s.id AND ca.is_active = 1
-       AND sc.status NOT IN ('COMPLETED', 'CLOSED', 'CANCELLED')) AS active_case_count
+       AND sc.status NOT IN ('CLOSED', 'CANCELLED', 'SURVEY_SKIPPED')) AS active_case_count
 """
 
 # จำนวนงานทั้งหมด/งานเสร็จ (ถอนจ่ายแล้ว) ของช่างแต่ละคน — ใช้ ca.is_active = 1 เป็นเกณฑ์เดียวกับ active_case_count
@@ -461,7 +461,7 @@ def get_surveyor_cases(surveyor_id):
                FROM survey_cases sc
                JOIN case_assignments ca ON ca.case_id = sc.id
                WHERE ca.surveyor_id = ? AND ca.is_active = 1
-               ORDER BY (sc.status NOT IN ('COMPLETED', 'CLOSED', 'CANCELLED')) DESC, sc.due_date""",
+               ORDER BY (sc.status NOT IN ('CLOSED', 'CANCELLED', 'SURVEY_SKIPPED')) DESC, sc.due_date""",
             (surveyor_id,),
         ).fetchall()
         return ok([dict(r) for r in rows])
@@ -518,6 +518,31 @@ CHECKLIST_FIELDS = [
     ("announcement_status", "POSTED", "WAITING"),
 ]
 
+# เกณฑ์งานค้างสูงสุดต่อช่างรังวัดหนึ่งคน (ไม่ใช่ hard limit ที่ระบบบังคับ แค่ใช้แสดงผลเตือนในหน้าโปรไฟล์ช่าง —
+# ดู avg_completed_per_month/backlog_by_month ด้านล่าง และ BACKLOG_CAP ฝั่ง frontend ที่ต้องตรงกับค่านี้)
+SURVEYOR_BACKLOG_CAP = 30
+
+
+def _month_key(d):
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def _add_months(year, month, delta):
+    total = year * 12 + (month - 1) + delta
+    return total // 12, total % 12 + 1
+
+
+def _trailing_month_keys(end_date, count=12):
+    """คืนรายการ key เดือนปฏิทินย้อนหลัง `count` เดือน เรียงเก่า->ใหม่ จบที่เดือนของ end_date (รวมเดือนที่ยังไม่มี
+    ข้อมูลด้วย ต่างจาก by_month/completed_by_month เดิมที่มีเฉพาะเดือนที่มีข้อมูลจริง — ใช้ทำกราฟ/ค่าเฉลี่ยที่ต้อง
+    นับเดือนที่ไม่มีงานเป็น 0 ด้วยเพื่อไม่ให้ค่าเฉลี่ยเพี้ยนสูงเกินจริง"""
+    year, month = end_date.year, end_date.month
+    keys = []
+    for i in range(count - 1, -1, -1):
+        y, m = _add_months(year, month, -i)
+        keys.append(f"{y:04d}-{m:02d}")
+    return keys
+
 
 @bp.get("/<surveyor_id>/profile")
 @login_required
@@ -565,7 +590,10 @@ def get_surveyor_profile_page(surveyor_id):
             status = c["status"]
             if status == CaseStatus.CLOSED:
                 kpi["completed"] += 1
-            elif status == CaseStatus.CANCELLED:
+            elif status in (CaseStatus.CANCELLED, CaseStatus.SURVEY_SKIPPED):
+                # งดรังวัด (SURVEY_SKIPPED) นับรวมในช่อง "ยกเลิก" — ถือเป็นงานที่จบแล้วไม่นับเป็นงานค้าง เช่นเดียวกับ
+                # ยกเลิก ตามที่ผู้ใช้ระบบยืนยัน (ดู CaseStatus.CLOSED_SET ใน constants.py) แต่ยังไม่มีช่อง kpi แยก
+                # ต่างหากสำหรับงดรังวัดโดยเฉพาะ จึงรวมไว้ในช่องเดียวกันไปก่อน
                 kpi["cancelled"] += 1
             else:
                 kpi["active"] += 1
@@ -586,7 +614,7 @@ def get_surveyor_profile_page(surveyor_id):
             bucket["total"] += 1
             if status == CaseStatus.CLOSED:
                 bucket["completed"] += 1
-            elif status != CaseStatus.CANCELLED:
+            elif status not in (CaseStatus.CANCELLED, CaseStatus.SURVEY_SKIPPED):
                 bucket["active"] += 1
 
             received = _parse_date(c["received_date"])
@@ -640,6 +668,77 @@ def get_surveyor_profile_page(surveyor_id):
                 else:
                     on_time["late"] += 1
         on_time["rate"] = round(on_time["on_time"] / on_time["completed_with_due"] * 100, 1) if on_time["completed_with_due"] else None
+
+        # วันที่ยกเลิกเรื่องจริง (ครั้งแรกที่สถานะเปลี่ยนเป็น CANCELLED) — เก็บแยกจาก closed_at_map ด้านบนตามรูปแบบ
+        # เดียวกัน ใช้ร่วมกับ closed_at_map คำนวณ "งานค้างรายเดือน" ด้านล่าง (เรื่องที่ปิดหรือยกเลิกแล้วไม่นับเป็น
+        # งานค้างอีกต่อไปนับจากเดือนที่ปิด/ยกเลิกจริง)
+        cancelled_at_map = {}
+        if case_ids:
+            cancelled_rows = conn.execute(
+                f"""SELECT case_id, MIN(changed_at) AS cancelled_at FROM case_status_history
+                    WHERE case_id IN ({placeholders}) AND new_status = ?
+                    GROUP BY case_id""",
+                case_ids + [CaseStatus.CANCELLED],
+            ).fetchall()
+            cancelled_at_map = {r["case_id"]: r["cancelled_at"] for r in cancelled_rows}
+
+        # วันที่งดรังวัดจริง (ครั้งแรกที่สถานะเปลี่ยนเป็น SURVEY_SKIPPED) — เก็บแยกตามรูปแบบเดียวกับ cancelled_at_map
+        # ด้านบน ใช้ร่วมกันคำนวณ "งานค้างรายเดือน" ด้านล่าง (งดรังวัดถือเป็นงานที่จบแล้วไม่นับเป็นงานค้างอีกต่อไป
+        # นับจากเดือนที่งดรังวัดจริง ตามที่ผู้ใช้ระบบยืนยัน — ดู CaseStatus.CLOSED_SET ใน constants.py)
+        survey_skipped_at_map = {}
+        if case_ids:
+            survey_skipped_rows = conn.execute(
+                f"""SELECT case_id, MIN(changed_at) AS survey_skipped_at FROM case_status_history
+                    WHERE case_id IN ({placeholders}) AND new_status = ?
+                    GROUP BY case_id""",
+                case_ids + [CaseStatus.SURVEY_SKIPPED],
+            ).fetchall()
+            survey_skipped_at_map = {r["case_id"]: r["survey_skipped_at"] for r in survey_skipped_rows}
+
+        # กราฟงานเกิดรายเดือน/งานค้างรายเดือน/ค่าเฉลี่ยงานเสร็จต่อเดือน (หน้าโปรไฟล์ช่าง) — คำนวณจากช่วง 12 เดือน
+        # ปฏิทินล่าสุดแบบ "เต็มทุกเดือน" (เดือนไหนไม่มีงานก็นับเป็น 0) ต่างจาก by_month/completed_by_month ด้านบน
+        # ที่มีเฉพาะเดือนที่มีข้อมูลจริง เพื่อให้กราฟแสดงช่วงเวลาต่อเนื่องถูกต้อง และค่าเฉลี่ยไม่เพี้ยนสูงเกินจริง
+        trailing_months = _trailing_month_keys(today, 12)
+        received_month_of = {}
+        ended_month_of = {}
+        for c in cases:
+            received = _parse_date(c["received_date"])
+            if not received:
+                continue
+            received_month_of[c["id"]] = _month_key(received)
+
+            ended_raw = None
+            if c["status"] == CaseStatus.CLOSED:
+                ended_raw = closed_at_map.get(c["id"])
+            elif c["status"] == CaseStatus.CANCELLED:
+                ended_raw = cancelled_at_map.get(c["id"])
+            elif c["status"] == CaseStatus.SURVEY_SKIPPED:
+                ended_raw = survey_skipped_at_map.get(c["id"])
+            ended_date = _parse_date(ended_raw) if ended_raw else None
+            if ended_date:
+                ended_month_of[c["id"]] = _month_key(ended_date)
+
+        received_by_month_dense = []
+        backlog_by_month = []
+        for mk in trailing_months:
+            received_count = sum(1 for rm in received_month_of.values() if rm == mk)
+            backlog_count = sum(
+                1
+                for cid, rm in received_month_of.items()
+                if rm <= mk and (ended_month_of.get(cid) is None or ended_month_of[cid] > mk)
+            )
+            received_by_month_dense.append({"year_month": mk, "total": received_count})
+            backlog_by_month.append({"year_month": mk, "backlog": backlog_count})
+
+        completed_month_counts = {}
+        for cid, em in ended_month_of.items():
+            # นับเป็นงานเสร็จเฉพาะเรื่องที่จบด้วยสถานะ CLOSED เท่านั้น (ไม่นับเรื่องที่ยกเลิก) — ตรงกับเกณฑ์เดียวกับ
+            # kpi["completed"]/on_time ด้านบน
+            case_row = next((c for c in cases if c["id"] == cid), None)
+            if case_row is not None and case_row["status"] == CaseStatus.CLOSED:
+                completed_month_counts[em] = completed_month_counts.get(em, 0) + 1
+        completed_by_month_dense = [{"year_month": mk, "completed": completed_month_counts.get(mk, 0)} for mk in trailing_months]
+        avg_completed_per_month = round(sum(m["completed"] for m in completed_by_month_dense) / len(trailing_months), 1) if trailing_months else 0.0
 
         # งานค้าง (ยังไม่จบ) แบ่งตามความเร่งด่วนนับจากวันนัดรังวัด — ละเอียดกว่า overdue_30/overdue_60 ใน kpi
         # ด้านบน (ซึ่งเริ่มนับแค่ตอนเกิน 30/60 วันไปแล้ว) เพื่อให้ช่างเห็นภาพรวมงานค้างทั้งหมดว่าควรเร่งเรื่องไหนก่อน
@@ -697,6 +796,12 @@ def get_surveyor_profile_page(surveyor_id):
                 "satisfaction": satisfaction,
                 "checklist": checklist,
                 "cases": cases,
+                # ข้อมูลสำหรับกราฟงานเกิด/งานค้างรายเดือน และค่าเฉลี่ยงานเสร็จต่อเดือน (12 เดือนปฏิทินล่าสุด
+                # แบบเต็มทุกเดือน) — ดู _trailing_month_keys ด้านบน
+                "received_by_month_dense": received_by_month_dense,
+                "backlog_by_month": backlog_by_month,
+                "avg_completed_per_month": avg_completed_per_month,
+                "backlog_cap": SURVEYOR_BACKLOG_CAP,
             }
         )
     finally:

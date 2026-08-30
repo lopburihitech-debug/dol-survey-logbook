@@ -224,9 +224,10 @@ const NAV_ICONS = {
   chevron: `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`,
 };
 
-// สถานะที่ถือว่า "จบงานแล้ว" ไม่นับเป็นงานค้าง — ต้องตรงกับ CaseStatus.CLOSED_SET ฝั่ง backend (constants.py)
-// และ CLOSED_SET ในหน้า my-work.html เพื่อให้ตัวเลขป้ายบนเมนูตรงกับที่แสดงในหน้านั้นเป๊ะๆ
-const NAV_CLOSED_SET = new Set(["COMPLETED", "CLOSED", "CANCELLED"]);
+// สถานะที่ถือว่า "จบงานแล้ว" ไม่นับเป็นงานค้าง — ถอนจ่ายแล้ว/ยกเลิก/งดรังวัด (ตามที่ผู้ใช้ระบบยืนยัน ไม่รวม
+// COMPLETED เพราะไม่มีเส้นทางไหนในระบบตั้งสถานะนี้จริง) ต้องตรงกับ CaseStatus.CLOSED_SET ฝั่ง backend
+// (constants.py) และ CLOSED_SET ในหน้า my-work.html เพื่อให้ตัวเลขป้ายบนเมนูตรงกับที่แสดงในหน้านั้นเป๊ะๆ
+const NAV_CLOSED_SET = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED"]);
 
 function navLinkHtml(item, activePage) {
   const active = item.key === activePage;

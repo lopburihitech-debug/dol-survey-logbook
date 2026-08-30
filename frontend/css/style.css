@@ -67,6 +67,12 @@ a { color: var(--primary); }
 .topbar .brand { font-weight: 700; font-size: 16px; line-height: 1.25; }
 .topbar .brand small { display: block; font-weight: 400; font-size: 11px; color: #bfe4cd; }
 
+/* กล่องผู้ใช้ (มุมขวา) บนจอกว้าง (>768px, นอกเงื่อนไข media query ด้านล่างที่ทับ width:100% ให้อยู่แล้วบนมือถือ) —
+   ดัน margin-left:auto ให้ชิดขวาเสมอ กันปัญหาเมนูของบทบาทที่มีลิงก์เยอะ (เช่นผู้ดูแลระบบ) ล้นบรรทัดแรกจนกล่องผู้ใช้
+   ต้องตกไปขึ้นบรรทัดที่ 2 ของ .topbar-inner (flex-wrap) แล้วเกาะชิดซ้ายใต้โลโก้แทนที่จะชิดขวาแบบตอนอยู่บรรทัดเดียว
+   กับเมนู — margin อัตโนมัติทำให้ชิดขวาสุดของบรรทัดตัวเองเสมอไม่ว่าจะขึ้นบรรทัดใหม่หรือไม่ */
+.topbar .user-box { margin-left: auto; }
+
 /* แถวเมนูหลัก — ลิงก์เดี่ยวและปุ่มเปิดเมนูย่อย ('จัดการ'/'ระบบ') ใช้หน้าตาปุ่มแบบเดียวกันหมด (pill) เพื่อความ
    สม่ำเสมอ ไอคอนหน้าป้ายชื่อช่วยให้กวาดสายตาหาเมนูที่ต้องการได้เร็วกว่าอ่านตัวหนังสือล้วนๆ */
 .topbar nav { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; position: relative; }
@@ -334,6 +340,37 @@ a { color: var(--primary); }
 .kpi-card.danger { border-left-color: var(--danger); }
 .kpi-card.danger .value { color: var(--danger); }
 
+/* การ์ดจัดอันดับ (top จังหวัด/สำนักงาน/ช่างรังวัดที่มีงานค้างมากที่สุด) ใน Dashboard ผู้บริหาร —
+   3 คอลัมน์บนจอกว้าง ย่อเหลือ 1 คอลัมน์บนมือถือ เหมือน .kpi-grid ด้านบน */
+/* auto-fit แทนที่จะกำหนดตายตัวเป็น 3 คอลัมน์ เพราะการ์ด "5 อันดับจังหวัด" อาจถูกซ่อนไปเมื่อกรองเหลือจังหวัดเดียว
+   (ดู renderRankings ใน dashboard.html) — ถ้าตายตัว 3 คอลัมน์ พอเหลือการ์ดแค่ 2 ใบจะเหลือที่ว่างเปล่าด้านขวา */
+.rank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; margin-bottom: 18px; }
+@media (max-width: 640px) { .rank-grid { grid-template-columns: 1fr; } }
+
+.ranked-list { display: flex; flex-direction: column; gap: 12px; }
+.ranked-row { display: flex; gap: 10px; align-items: flex-start; }
+.ranked-rank {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #DFE8E2; color: #445064;
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  margin-top: 1px;
+}
+.ranked-rank.rank-1 { background: #FBE1DE; color: var(--danger); }
+.ranked-rank.rank-2 { background: var(--gold-light); color: var(--warning); }
+.ranked-rank.rank-3 { background: var(--accent-light); color: var(--primary); }
+.ranked-body { flex: 1; min-width: 0; }
+.ranked-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ranked-label { font-size: 13px; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-value { font-size: 13px; font-weight: 700; color: var(--text); flex-shrink: 0; }
+.ranked-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+.ranked-track { height: 6px; background: #EDF2EF; border-radius: 4px; margin-top: 5px; overflow: hidden; }
+.ranked-fill { height: 100%; background: var(--primary-light); border-radius: 4px; }
+.ranked-row:nth-child(1) .ranked-fill { background: var(--danger); }
+.ranked-row:nth-child(2) .ranked-fill { background: var(--warning); }
+
 h1 { font-size: 20px; color: var(--primary); margin: 0 0 4px 0; font-weight: 700; }
 h2 { font-size: 16px; color: var(--primary); margin: 0 0 12px 0; font-weight: 700; }
 .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
@@ -371,6 +408,21 @@ tr.clickable { cursor: pointer; }
 .badge.status-COMPLETED, .badge.status-CLOSED { background: #DCF3E4; color: var(--success); }
 .badge.status-CANCELLED, .badge.status-POSTPONED, .badge.status-REWORK_REQUIRED, .badge.status-SURVEY_SKIPPED { background: #FBE1DE; color: var(--danger); }
 .badge.status-RE_APPOINTMENT_NEEDED { background: #F3E8FD; color: #6b21a8; }
+/* จำนวนสถานะงานทั้งหมด (dashboard.html) — กริดการ์ดเล็กๆ หนึ่งช่องต่อหนึ่งสถานะ ใช้ badge สีเดียวกับที่ใช้ทั่วระบบ
+   (.badge.status-* ด้านบน) คู่กับตัวเลขจำนวน auto-fill ให้ปรับจำนวนคอลัมน์ตามความกว้างจอเองโดยไม่ต้องกำหนด
+   breakpoint ตายตัว (เหมือน .rank-grid) */
+.status-count-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-top: 4px; }
+.status-count-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px solid #E7EEE9; border-radius: var(--radius); padding: 10px 14px;
+  background: white;
+}
+.status-count-item .value { font-size: 19px; font-weight: 700; color: var(--text); }
+/* ป้ายระดับสถานะทั่วไป (เขียว/ส้ม/แดง) — ใช้กับตัวชี้วัดที่ไม่ใช่สถานะเรื่องโดยตรง เช่น เกณฑ์งานค้างต่อช่าง
+   ในหน้าโปรไฟล์ช่างรังวัด (surveyor-profile.html) สีชุดเดียวกับ .badge.status-* ด้านบนเพื่อความหมายตรงกันทั้งระบบ */
+.badge.level-ok { background: #DCF3E4; color: var(--success); }
+.badge.level-warn { background: var(--gold-light); color: var(--warning); }
+.badge.level-danger { background: #FBE1DE; color: var(--danger); }
 
 .filters { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .filters input, .filters select {
@@ -746,33 +798,86 @@ input:focus, select:focus, textarea:focus {
 .seg-btn.active.neg { background: var(--text-muted); color: white; }
 .seg-btn:disabled { cursor: default; }
 
-/* รูปภาพประกอบข้อมูลแปลง */
-.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
-@media (max-width: 480px) { .photo-grid { grid-template-columns: repeat(2, 1fr); } }
+/* รูปภาพประกอบข้อมูลแปลง — ใช้ thumbnail ขนาดกะทัดรัดคงที่ (ไม่ยืดเต็มคอลัมน์เหมือนเดิม) เพื่อไม่ให้เปลือง
+   พื้นที่แนวตั้งเมื่อมีรูปจำนวนมาก (สูงสุด 10 รูป) — flex-wrap ทำให้จำนวนต่อแถวปรับตามความกว้างจอเองโดยไม่ต้อง
+   กำหนด breakpoint ตายตัว คลิกที่รูปเพื่อดูขนาดเต็มใน lightbox (ดู #photoLightbox ใน case.html) */
+.photo-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .photo-slot {
   position: relative;
-  aspect-ratio: 1 / 1;
+  width: 74px;
+  height: 74px;
+  flex: 0 0 auto;
   border: 1px solid #DFE8E2;
-  border-radius: var(--radius);
+  border-radius: 8px;
   overflow: hidden;
   background: #F1F5F9;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
 }
 .photo-slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .photo-slot .photo-remove {
-  position: absolute; top: 4px; right: 4px;
+  position: absolute; top: 2px; right: 2px;
   background: rgba(15,23,42,0.65); color: white; border: none;
-  width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 1;
+  width: 18px; height: 18px; border-radius: 50%; cursor: pointer; font-size: 12px; line-height: 1;
 }
 .photo-slot.empty {
   border: 2px dashed #CBD5C9;
   color: var(--text-muted);
-  font-size: 24px;
+  font-size: 22px;
   cursor: pointer;
 }
 .photo-slot.empty:hover { border-color: var(--primary); color: var(--primary); }
+
+/* Lightbox ดูรูปภาพขนาดเต็ม (#photoLightbox ใน case.html) — ทับ .modal-backdrop (z-index 50) เพราะเปิดจาก
+   ภายในหน้าเดียวกัน ไม่ได้เปิดพร้อม modal อื่นอยู่แล้ว แต่ตั้ง z-index สูงกว่าไว้กันเหนียว */
+.photo-lightbox-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.85);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+  padding: 24px;
+}
+.photo-lightbox-backdrop img {
+  max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: var(--shadow-md);
+  display: block;
+  cursor: default;
+}
+.photo-lightbox-close {
+  position: absolute; top: 16px; right: 20px;
+  background: rgba(255,255,255,0.15); color: white; border: none;
+  width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 20px; line-height: 1;
+}
+.photo-lightbox-close:hover { background: rgba(255,255,255,0.3); }
+
+/* วิดีโอประกอบข้อมูลแปลง (case.html) — แสดงเป็นรายการแนวตั้ง (ไม่ใช่กริดสี่เหลี่ยมแบบรูปภาพ) เพราะมีจำนวนน้อยกว่า
+   มาก (ไม่เกิน 2 ไฟล์) และ <video controls> ต้องการพื้นที่แนวนอนมากกว่ารูปขนาดย่อ */
+.video-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.video-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #DFE8E2;
+  border-radius: var(--radius);
+  padding: 10px;
+  background: #F8FAF9;
+  flex-wrap: wrap;
+}
+.video-item video { width: 220px; max-width: 100%; max-height: 160px; border-radius: 6px; background: #000; display: block; }
+.video-item .video-meta { flex: 1; min-width: 120px; font-size: 12.5px; color: var(--text-muted); }
+.video-add-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed #CBD5C9;
+  border-radius: var(--radius);
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+}
+.video-add-slot:hover { border-color: var(--primary); color: var(--primary); }
 
 .location-link {
   display: inline-flex; align-items: center; gap: 5px;

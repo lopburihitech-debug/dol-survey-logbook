@@ -39,9 +39,10 @@
   // ไอคอนปฏิทินเล็กๆ หน้าแถววันนัดรังวัด — วาดเองด้วย stroke=currentColor ชุดเดียวกับที่ใช้ในเมนูบน (api.js NAV_ICONS)
   const CAL_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px; height:14px; flex-shrink:0; vertical-align:-2px;"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`;
 
-  // เรื่องที่ถือว่า "จบงานแล้ว" — ใช้จัดลำดับ (ดันไปท้ายสุด) และลดความเด่นของสีขอบการ์ด ไม่เกี่ยวกับ
+  // เรื่องที่ถือว่า "จบงานแล้ว" — ถอนจ่ายแล้ว/ยกเลิก/งดรังวัด (ตามที่ผู้ใช้ระบบยืนยัน ไม่รวม COMPLETED เพราะไม่มี
+  // เส้นทางไหนในระบบตั้งสถานะนี้จริง) ใช้จัดลำดับ (ดันไปท้ายสุด) และลดความเด่นของสีขอบการ์ด ไม่เกี่ยวกับ
   // OVERDUE_EXCLUDED_STATUSES ด้านล่างซึ่งกว้างกว่า (มีสถานะที่ยัง "เปิดอยู่" แต่ไม่นับเกินนัดด้วย)
-  const CLOSED_SET = new Set(["COMPLETED", "CLOSED", "CANCELLED"]);
+  const CLOSED_SET = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED"]);
 
   // สถานะที่ถือว่า "จบงานแล้ว" ไม่ต้องแสดงป้ายเกินนัด แม้จะเลยวันนัดรังวัดมานานแค่ไหนก็ตาม — ตรงกับ cases.html/
   // surveyor-profile.html เพื่อให้ตัวเลข/ป้ายเกินนัดตรงกันทั้งระบบ

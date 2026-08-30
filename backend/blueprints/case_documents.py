@@ -1,4 +1,4 @@
-"""อัปโหลด/แสดง/ลบรูปภาพประกอบข้อมูลแปลงที่ดิน (case_documents) — จำกัดไม่เกิน 3 รูปต่อเรื่อง
+"""อัปโหลด/แสดง/ลบรูปภาพและวิดีโอประกอบข้อมูลแปลงที่ดิน (case_documents) — รูปภาพไม่เกิน 10 รูป, วิดีโอไม่เกิน 2 ไฟล์ต่อเรื่อง
 เก็บไฟล์ไว้ในดิสก์ของเครื่องที่รันเซิร์ฟเวอร์ (backend/data/uploads/<case_id>/) และเสิร์ฟผ่าน endpoint ที่ต้อง login
 """
 import os
@@ -15,10 +15,18 @@ bp = Blueprint("case_documents", __name__, url_prefix="/api/v1")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(BASE_DIR / "data" / "uploads")))
-MAX_PHOTOS_PER_CASE = 3
-MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024  # 12MB ต่อไฟล์
+MAX_PHOTOS_PER_CASE = 10
+MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024  # 12MB ต่อไฟล์ (รูปภาพ)
 # กันเฉพาะนามสกุลที่อันตรายชัดเจน (รันโค้ดได้) — นอกนั้นรับไฟล์รูปภาพทุกประเภทตามที่ขอ
 BLOCKED_EXTENSIONS = {".exe", ".php", ".php3", ".php4", ".php5", ".phtml", ".sh", ".bat", ".cmd", ".js", ".html", ".htm", ".svg"}
+
+# วิดีโอประกอบ (เช่น บันทึกเหตุการณ์สำคัญหน้างาน) — จำกัดจำนวน/ขนาดต่อไฟล์ให้เล็กกว่ารูปภาพมาก เพราะไฟล์ใหญ่กว่า
+# มากและเซิร์ฟเวอร์เก็บไฟล์ลงดิสก์ตรงๆ (ไม่มี CDN/ตัวบีบอัด) — 30MB ต่อไฟล์ ยังอัปโหลดทันภายใน gunicorn timeout
+# 60 วินาที (ดู entrypoint.sh) แม้เครือข่ายสำนักงานจะไม่เร็วมากนัก ส่วน 2 ไฟล์ต่อเรื่องเพียงพอสำหรับคลิปเหตุการณ์
+# สำคัญเป็นครั้งคราว ไม่ได้ตั้งใจให้ใช้เก็บวิดีโอจำนวนมาก
+MAX_VIDEOS_PER_CASE = 2
+MAX_VIDEO_SIZE_BYTES = 30 * 1024 * 1024  # 30MB ต่อไฟล์
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv", ".3gp"}
 
 
 def _case_visible(conn, case_id):
@@ -83,6 +91,72 @@ def upload_document(case_id):
         conn.execute(
             """INSERT INTO case_documents (id, case_id, document_type, file_url, uploaded_by, created_at)
                VALUES (?, ?, 'parcel_photo', ?, ?, ?)""",
+            (doc_id, case_id, file_url, g.current_user["id"], ts),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM case_documents WHERE id = ?", (doc_id,)).fetchone()
+        return ok(dict(row), 201)
+    finally:
+        conn.close()
+
+
+@bp.get("/survey-cases/<case_id>/videos")
+@login_required
+def list_videos(case_id):
+    conn = get_connection()
+    try:
+        if _case_visible(conn, case_id) is None:
+            return err("ไม่พบเรื่องที่ระบุ หรือไม่มีสิทธิ์เข้าถึง", 404)
+        rows = conn.execute(
+            "SELECT * FROM case_documents WHERE case_id = ? AND document_type = 'case_video' ORDER BY created_at",
+            (case_id,),
+        ).fetchall()
+        return ok([dict(r) for r in rows])
+    finally:
+        conn.close()
+
+
+@bp.post("/survey-cases/<case_id>/videos")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN, Role.SUPERVISOR, Role.BRANCH_ADMIN, Role.SURVEYOR)
+def upload_video(case_id):
+    conn = get_connection()
+    try:
+        if _case_visible(conn, case_id) is None:
+            return err("ไม่พบเรื่องที่ระบุ หรือไม่มีสิทธิ์เข้าถึง", 404)
+
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return err("ต้องแนบไฟล์วิดีโอ (field name: file)")
+
+        existing_count = conn.execute(
+            "SELECT COUNT(*) AS c FROM case_documents WHERE case_id = ? AND document_type = 'case_video'",
+            (case_id,),
+        ).fetchone()["c"]
+        if existing_count >= MAX_VIDEOS_PER_CASE:
+            return err(f"แนบวิดีโอได้ไม่เกิน {MAX_VIDEOS_PER_CASE} ไฟล์ต่อเรื่อง กรุณาลบไฟล์เดิมก่อนเพิ่มใหม่", 409)
+
+        ext = Path(file.filename).suffix.lower()
+        if ext not in ALLOWED_VIDEO_EXTENSIONS:
+            return err("รองรับเฉพาะไฟล์วิดีโอ (" + ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS)) + ")")
+
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+        if size > MAX_VIDEO_SIZE_BYTES:
+            return err(f"ไฟล์ใหญ่เกินไป (จำกัดไม่เกิน {MAX_VIDEO_SIZE_BYTES // (1024*1024)}MB ต่อไฟล์)")
+
+        doc_id = new_id()
+        case_dir = UPLOAD_DIR / case_id
+        case_dir.mkdir(parents=True, exist_ok=True)
+        stored_name = f"{doc_id}{ext}"
+        file.save(str(case_dir / stored_name))
+
+        ts = now_iso()
+        file_url = f"/api/v1/uploads/{case_id}/{stored_name}"
+        conn.execute(
+            """INSERT INTO case_documents (id, case_id, document_type, file_url, uploaded_by, created_at)
+               VALUES (?, ?, 'case_video', ?, ?, ?)""",
             (doc_id, case_id, file_url, g.current_user["id"], ts),
         )
         conn.commit()

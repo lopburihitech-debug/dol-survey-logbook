@@ -167,9 +167,14 @@
   async function render(profile) {
     const s = profile.surveyor;
     const kpi = profile.kpi;
-    const onTime = profile.on_time || { completed_with_due: 0, on_time: 0, late: 0, rate: null };
     const satisfaction = profile.satisfaction || { average: null, count: 0, distribution: {} };
     const completedByMonth = (profile.completed_by_month || []).slice(-12);
+    // เกณฑ์งานค้างสูงสุดต่อช่าง + ข้อมูลกราฟงานเกิด/งานค้างรายเดือน และค่าเฉลี่ยงานเสร็จต่อเดือน — คำนวณมาจาก
+    // backend แล้ว (12 เดือนปฏิทินล่าสุดแบบเต็มทุกเดือน ดู _trailing_month_keys ใน blueprints/surveyors.py)
+    const backlogCap = profile.backlog_cap || 30;
+    const avgCompletedPerMonth = profile.avg_completed_per_month || 0;
+    const receivedByMonthDense = profile.received_by_month_dense || [];
+    const backlogByMonth = profile.backlog_by_month || [];
     const types = (await apiFetch("/survey-types")) || [];
     const typeMap = {};
     types.forEach((t) => (typeMap[t.id] = t.name));
@@ -224,24 +229,40 @@
         </div>`;
     }).join("");
 
-    // อัตราปิดงานตรงกำหนด — เทียบวันที่ปิดงานจริง (เปลี่ยนสถานะเป็น "ถอนจ่ายแล้ว") กับ due_date ที่คำนวณไว้ตอนรับเรื่อง
-    // นับเฉพาะเรื่องที่ปิดสำเร็จแล้วและมี due_date เทียบได้เท่านั้น (ดู on_time ฝั่ง backend)
-    const onTimeHtml =
-      onTime.completed_with_due === 0
-        ? `<div class="empty-state">ยังไม่มีงานที่ปิดสำเร็จพร้อมวันครบกำหนดให้เปรียบเทียบ</div>`
-        : `
-        <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:10px; flex-wrap:wrap;">
-          <div style="font-size:34px; font-weight:700; color:${onTime.rate >= 80 ? "var(--success)" : onTime.rate >= 50 ? "var(--warning)" : "var(--danger)"};">${onTime.rate}%</div>
-          <div class="subtitle">ของงานที่ปิดสำเร็จ ${onTime.completed_with_due} เรื่อง (นับเฉพาะเรื่องที่มีวันครบกำหนดเทียบได้)</div>
-        </div>
-        <div class="stat-bar">
-          <span class="seg-pos" style="width:${(onTime.on_time / onTime.completed_with_due) * 100}%;"></span>
-          <span class="seg-neg" style="width:${(onTime.late / onTime.completed_with_due) * 100}%;"></span>
-        </div>
-        <div class="stat-legend">
-          <span><span class="dot" style="background:var(--success);"></span>ตรงกำหนด ${onTime.on_time}</span>
-          <span><span class="dot" style="background:var(--warning);"></span>ล่าช้ากว่ากำหนด ${onTime.late}</span>
-        </div>`;
+    // เกณฑ์งานค้างต่อช่าง — ตามเกณฑ์ที่กำหนด ช่างแต่ละคนควรมีงานค้าง (ยังไม่ปิด) ไม่เกิน backlogCap งานในเวลาเดียวกัน
+    // ระดับสี: เขียว < 70% ของเกณฑ์, ส้ม 70%-99%, แดงเมื่อถึง/เกินเกณฑ์ — ใช้ทั้งตัวเลขและหลอดวัดผลด้านล่าง
+    const backlogActive = kpi.active;
+    const backlogPct = Math.min(100, backlogCap ? (backlogActive / backlogCap) * 100 : 0);
+    let backlogLevelClass, backlogLevelText, backlogColor;
+    if (backlogActive >= backlogCap) {
+      backlogLevelClass = "level-danger";
+      backlogLevelText = "เกินเกณฑ์ที่กำหนด";
+      backlogColor = "var(--danger)";
+    } else if (backlogActive >= backlogCap * 0.7) {
+      backlogLevelClass = "level-warn";
+      backlogLevelText = "ใกล้ถึงเกณฑ์";
+      backlogColor = "var(--warning)";
+    } else {
+      backlogLevelClass = "level-ok";
+      backlogLevelText = "อยู่ในเกณฑ์ปกติ";
+      backlogColor = "var(--success)";
+    }
+    const backlogCapHtml = `
+      <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:10px; flex-wrap:wrap;">
+        <div style="font-size:34px; font-weight:700; color:${backlogColor};">${backlogActive} / ${backlogCap}</div>
+        <span class="badge ${backlogLevelClass}">${backlogLevelText}</span>
+      </div>
+      <div class="stat-bar" style="height:12px;">
+        <span style="display:block; width:${backlogPct}%; height:100%; background:${backlogColor}; border-radius:inherit;"></span>
+      </div>`;
+
+    // ผลงานเฉลี่ยรายเดือน — จำนวนงานเสร็จเฉลี่ยต่อเดือน คำนวณจาก 12 เดือนปฏิทินล่าสุดแบบเต็มทุกเดือน (เดือนที่ไม่มี
+    // งานเสร็จนับเป็น 0 ด้วย) จึงสะท้อนอัตราทำงานจริงได้แม่นยำกว่าการเฉลี่ยเฉพาะเดือนที่มีข้อมูล
+    const avgCompletedHtml = `
+      <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;">
+        <div style="font-size:34px; font-weight:700; color:var(--primary);">${avgCompletedPerMonth.toFixed(1)}</div>
+        <div class="subtitle">เรื่อง/เดือน โดยเฉลี่ย (12 เดือนปฏิทินล่าสุด นับเดือนที่ไม่มีงานเสร็จเป็น 0 ด้วย)</div>
+      </div>`;
 
     // สรุปคะแนนความพึงพอใจจากประชาชน — ใช้อีโมจิเดียวกับหน้ารายการงาน (cases.html) เพื่อความหมายตรงกันทั้งระบบ
     const satisfactionHtml =
@@ -254,6 +275,24 @@
           <div class="subtitle">เฉลี่ยจาก ${satisfaction.count} เรื่องที่ประชาชนให้คะแนน</div>
         </div>
         <div id="satisfactionDonut"></div>`;
+
+    // จำนวนสถานะงานทั้งหมดของช่างคนนี้ — ใช้ badge สีเดียวกับที่ใช้ทั่วระบบ (statusBadge() ใน api.js) แบบเดียวกับ
+    // การ์ด "จำนวนสถานะงานทั้งหมด" ใน Dashboard เพื่อให้รูปแบบตรงกันทั้งระบบ
+    const statusCounts = {};
+    profile.cases.forEach((c) => { statusCounts[c.status] = (statusCounts[c.status] || 0) + 1; });
+    const statusCountHtml = Object.keys(statusCounts).length
+      ? Object.keys(statusCounts)
+          .map((status) => ({ status, count: statusCounts[status] }))
+          .sort((a, b) => b.count - a.count)
+          .map(
+            (r) => `
+        <div class="status-count-item">
+          ${statusBadge(r.status)}
+          <span class="value">${r.count}</span>
+        </div>`
+          )
+          .join("")
+      : `<div class="empty-state">ยังไม่มีงาน</div>`;
 
     const caseRows = profile.cases.length
       ? profile.cases
@@ -295,8 +334,19 @@
       </div>
 
       <div class="card">
-        <h2>อัตราปิดงานตรงกำหนด</h2>
-        ${onTimeHtml}
+        <h2>จำนวนสถานะงานทั้งหมด</h2>
+        <div class="status-count-grid">${statusCountHtml}</div>
+      </div>
+
+      <div class="card">
+        <h2>เกณฑ์งานค้างต่อช่าง</h2>
+        <div class="subtitle" style="margin-bottom:10px;">ตามเกณฑ์ที่กำหนด ช่างแต่ละคนควรมีงานค้าง (ยังไม่ปิด) ไม่เกิน ${backlogCap} งาน ในเวลาเดียวกัน</div>
+        ${backlogCapHtml}
+      </div>
+
+      <div class="card">
+        <h2>ผลงานเฉลี่ยรายเดือน</h2>
+        ${avgCompletedHtml}
       </div>
 
       <div class="card">
@@ -316,7 +366,9 @@
 
       <div class="card">
         <h2>แยกตามเดือนที่รับเรื่อง</h2>
-        <div class="table-scroll">
+        <div class="subtitle" style="margin-bottom:10px;">แนวโน้มงานที่รับเข้ามารายเดือน (12 เดือนล่าสุด)</div>
+        <div id="receivedTrendChart"></div>
+        <div class="table-scroll" style="margin-top:16px;">
         <table>
           <thead><tr><th>เดือน/ปี</th><th>จำนวนงาน</th></tr></thead>
           <tbody>${byMonthRows}</tbody>
@@ -328,6 +380,12 @@
         <h2>แนวโน้มงานที่ปิดสำเร็จรายเดือน</h2>
         <div class="subtitle" style="margin-bottom:10px;">นับจากวันที่เปลี่ยนสถานะเป็น "ถอนจ่ายแล้ว" จริง (ต่างจากตาราง "แยกตามเดือนที่รับเรื่อง" ด้านบนซึ่งนับจากวันที่รับเรื่องเข้ามา) แสดงย้อนหลังไม่เกิน 12 เดือนล่าสุด</div>
         <div id="completedTrendChart"></div>
+      </div>
+
+      <div class="card">
+        <h2>แนวโน้มงานค้างรายเดือน</h2>
+        <div class="subtitle" style="margin-bottom:10px;">จำนวนงานค้าง (ยังไม่ปิด) ณ สิ้นเดือน ย้อนหลัง 12 เดือน เทียบกับเกณฑ์สูงสุด ${backlogCap} งานต่อช่าง (เส้นประสีแดง) — แท่งที่ถึงหรือเกินเกณฑ์จะขึ้นสีแดง</div>
+        <div id="backlogTrendChart"></div>
       </div>
 
       <div class="card">
@@ -357,6 +415,15 @@
 
     const trendRows = completedByMonth.map((m) => ({ label: shortMonthLabel(m.year_month), count: m.completed }));
     renderMonthlyTrendChart(document.getElementById("completedTrendChart"), trendRows);
+
+    const receivedTrendRows = receivedByMonthDense.map((m) => ({ label: shortMonthLabel(m.year_month), count: m.total }));
+    renderMonthlyTrendChart(document.getElementById("receivedTrendChart"), receivedTrendRows);
+
+    const backlogTrendRows = backlogByMonth.map((m) => ({ label: shortMonthLabel(m.year_month), count: m.backlog }));
+    renderMonthlyTrendChart(document.getElementById("backlogTrendChart"), backlogTrendRows, {
+      threshold: backlogCap,
+      thresholdLabel: `เกณฑ์ ${backlogCap}`,
+    });
 
     if (s.photo_url) {
       const url = await fetchAuthedBlobUrl(s.photo_url);

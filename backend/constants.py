@@ -36,7 +36,12 @@ class CaseStatus:
     RE_APPOINTMENT_NEEDED = "RE_APPOINTMENT_NEEDED"  # นัดตรวจสอบใหม่ (ยังไม่มีนัด ต้องกำหนดนัดใหม่ทั้งหมด)
     SURVEY_DONE = "SURVEY_DONE"  # รังวัดเสร็จแล้ว (ลงพื้นที่รังวัดเสร็จสิ้นแล้ว รอเจ้าหน้าที่ปิดเรื่อง/ถอนจ่ายต่อไป)
 
-    CLOSED_SET = {COMPLETED, CLOSED, CANCELLED}
+    # สถานะที่ถือว่า "จบงาน/ไม่ใช่งานค้างแล้ว" — ถอนจ่ายแล้ว, ยกเลิก, งดรังวัด (ตามที่ผู้ใช้ระบบยืนยัน ไม่รวม COMPLETED
+    # เพราะไม่มีเส้นทางไหนในระบบตั้งสถานะนี้จริง — ดู ALLOWED_TRANSITIONS ด้านล่าง เก็บ COMPLETED ไว้เป็นค่าคงที่เผื่อ
+    # ข้อมูลเก่า/นำเข้าจากระบบอื่นเท่านั้น) ใช้คำนวณ "งานค้าง (ยังไม่ปิด)"/"เกินกำหนด" ทั่วทั้งระบบ (dashboard.py,
+    # surveyors.py, และฝั่ง frontend ที่มีชุดเดียวกันนี้ซ้ำ — ดู NAV_CLOSED_SET ใน js/api.js, CLOSED_STATUSES ใน
+    # dashboard.html, CLOSED_SET ใน my-work.html ต้องแก้พร้อมกันถ้าเปลี่ยนชุดนี้)
+    CLOSED_SET = {CLOSED, CANCELLED, SURVEY_SKIPPED}
 
 
 # การเปลี่ยนสถานะที่อนุญาตแบบ manual ผ่าน PATCH /status

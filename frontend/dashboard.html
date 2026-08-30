@@ -13,15 +13,51 @@
 <div class="topbar" id="topbar"></div>
 <div class="container">
   <h1>Dashboard</h1>
-  <div class="subtitle">ภาพรวมงานรังวัดตามสิทธิ์ของท่าน</div>
+  <div class="subtitle" id="dashboardSubtitle">ภาพรวมงานรังวัดตามสิทธิ์ของท่าน</div>
 
   <div class="kpi-grid" id="kpiGrid">
     <div class="loading">กำลังโหลดข้อมูล...</div>
   </div>
 
+  <div class="card">
+    <h2>จำนวนสถานะงานทั้งหมด</h2>
+    <div class="status-count-grid" id="statusCountGrid">
+      <div class="loading">กำลังโหลด...</div>
+    </div>
+  </div>
+
   <div id="provinceSection" style="display:none;">
-    <h2 style="margin:24px 0 12px;">ภาพรวมตามจังหวัดและสาขา</h2>
-    <div id="provinceCards"></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; margin:24px 0 12px;">
+      <h2 style="margin:0;">ภาพรวมตามจังหวัดและสาขา</h2>
+      <div class="filters" id="provinceFilterBar" style="display:none; margin-bottom:0;">
+        <select id="provinceFilter" onchange="onProvinceFilterChange()">
+          <option value="">ภาพรวมทั้งหมด</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="rank-grid" id="rankGrid" style="display:none;">
+      <div class="card" id="rankProvinceCard" style="margin-bottom:0;">
+        <h3 style="margin:0 0 12px; color:var(--primary); font-size:14.5px;">5 อันดับจังหวัดที่มีงานค้างมากที่สุด</h3>
+        <div class="ranked-list" id="rankProvinceList"></div>
+      </div>
+      <div class="card" id="rankOfficeCard" style="margin-bottom:0;">
+        <h3 style="margin:0 0 12px; color:var(--primary); font-size:14.5px;">5 อันดับสำนักงานที่มีงานค้างมากที่สุด</h3>
+        <div class="ranked-list" id="rankOfficeList"></div>
+      </div>
+      <div class="card" id="rankSurveyorCard" style="margin-bottom:0;">
+        <h3 style="margin:0 0 12px; color:var(--primary); font-size:14.5px;">ช่างรังวัดที่มีงานค้างมากที่สุด</h3>
+        <div class="ranked-list" id="rankSurveyorList"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        <h3 style="margin:0; color:var(--primary); font-size:15px;" id="comparisonTitle">เปรียบเทียบทุกจังหวัดและสำนักงาน</h3>
+        <div style="font-size:12.5px; color:var(--text-muted);" id="comparisonSummary"></div>
+      </div>
+      <div id="comparisonChart"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -75,97 +111,322 @@
       // ไม่พบข้อมูลช่างรังวัดที่ตรงกับบัญชีนี้ (กรณีผิดปกติ) — แสดง dashboard ทั่วไปแทนดีกว่าค้างหน้าเปล่า
     }
 
-    await loadSummary();
-    await loadProvinceBreakdown();
-    await loadStatusDonut();
-    await loadRecentCases();
-  }
-
-  async function loadProvinceBreakdown() {
-    const offices = await apiFetch("/dashboard/by-office");
-    const section = document.getElementById("provinceSection");
-    // แสดงส่วนนี้เฉพาะเมื่อมีมากกว่า 1 สำนักงานให้เทียบ (ผู้ดูแลระบบ/ผู้บริหารเห็นหลายจังหวัด/สาขา) —
-    // หัวหน้าช่างที่เห็นแค่สำนักงานตัวเอง หรือช่างรังวัด ไม่มีอะไรให้เทียบ จึงไม่ต้องแสดงส่วนนี้เลย
-    if (!offices || offices.length <= 1) return;
-
-    const groups = groupOfficesByProvince(offices);
-    document.getElementById("provinceCards").innerHTML = groups
-      .map((g, gi) => {
-        const total = g.offices.reduce((s, o) => s + o.total_cases, 0);
-        const pending = g.offices.reduce((s, o) => s + o.pending_cases, 0);
-        const overdue = g.offices.reduce((s, o) => s + o.overdue_cases, 0);
-        return `
-        <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
-            <h3 style="margin:0; color:var(--primary); font-size:15px;">จังหวัด${g.province}</h3>
-            <div style="font-size:12.5px; color:var(--text-muted);">
-              งานทั้งหมด <b style="color:var(--text);">${total}</b>
-              &nbsp;·&nbsp; ค้าง <b style="color:var(--warning);">${pending}</b>
-              &nbsp;·&nbsp; เกินกำหนด <b style="color:var(--danger);">${overdue}</b>
-              &nbsp;·&nbsp; ${g.offices.length} สำนักงาน/สาขา
-            </div>
-          </div>
-          <div id="officeChart-${gi}"></div>
-        </div>`;
-      })
-      .join("");
-
-    groups.forEach((g, gi) => {
-      const rows = g.offices.map((o) => ({ ...o, label: officeShortLabel(o.office_name) }));
-      renderOfficeBarChart(document.getElementById(`officeChart-${gi}`), rows);
-    });
-
-    section.style.display = "block";
-  }
-
-  async function loadStatusDonut() {
-    const rows = await apiFetch("/dashboard/status-breakdown");
-    if (!rows) return;
-    const segments = rows.map((r) => ({
-      label: STATUS_LABELS[r.status] || r.status,
-      count: r.count,
-      color: STATUS_CHART_COLORS[r.status] || "#94a3b8",
-    }));
-    renderDonutChart(document.getElementById("statusDonut"), segments);
-  }
-
-  async function loadSummary() {
-    const s = await apiFetch("/dashboard/summary");
-    if (!s) return;
-    document.getElementById("kpiGrid").innerHTML = `
-      <div class="kpi-card">
-        <div class="value">${s.total_cases}</div>
-        <div class="label">งานทั้งหมด</div>
-      </div>
-      <div class="kpi-card warn">
-        <div class="value">${s.pending_cases}</div>
-        <div class="label">งานค้าง (ยังไม่ปิด)</div>
-      </div>
-      <div class="kpi-card danger">
-        <div class="value">${s.overdue_cases}</div>
-        <div class="label">เกินกำหนด (วันทำการ)</div>
-      </div>
-      <div class="kpi-card">
-        <div class="value">${s.pending_review_cases}</div>
-        <div class="label">รอตรวจ QC</div>
-      </div>
-    `;
-  }
-
-  async function loadRecentCases() {
+    // ดึงรายการเรื่องทั้งหมด (ตามสิทธิ์ที่เห็น) มาครั้งเดียว แล้วคำนวณ KPI/โดนัทสถานะ/ตารางงานล่าสุดจากชุดเดียวกันนี้
+    // ในเบราว์เซอร์ทั้งหมด — ใช้ endpoint เดิม (/survey-cases) ที่เดิมดึงมาแสดง "งานล่าสุด" อยู่แล้ว ไม่ได้เพิ่มการยิง
+    // API ใหม่ และทำให้ทุกส่วนของหน้ากรองตามจังหวัด/สำนักงานที่เลือกได้ (แทนที่ /dashboard/summary กับ
+    // /dashboard/status-breakdown ซึ่งกรองแบบนี้ไม่ได้ เพราะเป็นยอดรวมตามสิทธิ์อย่างเดียว ไม่รับพารามิเตอร์กรอง)
     const [cases, types] = await Promise.all([
       apiFetch("/survey-cases"),
       apiFetch("/survey-types"),
     ]);
-    if (!cases) return;
+    allCases = cases || [];
+    allSurveyTypes = types || [];
+
+    await loadProvinceBreakdown();
+  }
+
+  // สถานะที่ต้องแชร์กันระหว่างฟังก์ชันจัดอันดับ/กรองจังหวัด — โหลดครั้งเดียวตอนเข้าหน้า แล้วกรอง/จัดอันดับใหม่
+  // ในเบราว์เซอร์ล้วนๆ เมื่อผู้ใช้เปลี่ยนตัวกรองจังหวัด ไม่ต้องยิง API ซ้ำ
+  let allOffices = [];
+  let allSurveyors = [];
+  let allCases = [];
+  let allSurveyTypes = [];
+  // ค่าดิบจาก <select id="provinceFilter"> — "" (ภาพรวมทั้งหมด) / "province:<ชื่อจังหวัด>" / "office:<office_id>"
+  // ดู parseFilterSelection() สำหรับการตีความค่านี้เป็น { type, province, officeId }
+  let filterSelection = "";
+
+  // ตีความค่าตัวกรองดิบเป็นขอบเขตที่ใช้จริง — เลือกสำนักงาน/สาขาหนึ่งใดจะได้ "จังหวัด" ของสำนักงานนั้นติดมาด้วย
+  // เพื่อให้การ์ดจัดอันดับ (5 อันดับสำนักงาน/ช่างรังวัด) ยังแสดงบริบททั้งจังหวัดนั้นให้ดู ไม่ใช่แค่สำนักงานเดียวโดดๆ
+  function parseFilterSelection() {
+    if (filterSelection.startsWith("province:")) {
+      return { type: "province", province: filterSelection.slice(9), officeId: "" };
+    }
+    if (filterSelection.startsWith("office:")) {
+      const officeId = filterSelection.slice(7);
+      const office = allOffices.find((o) => o.office_id === officeId);
+      return { type: "office", province: office ? office.province : "", officeId };
+    }
+    return { type: "all", province: "", officeId: "" };
+  }
+
+  async function loadProvinceBreakdown() {
+    const [offices, surveyors] = await Promise.all([
+      apiFetch("/dashboard/by-office"),
+      apiFetch("/surveyors"),
+    ]);
+    const section = document.getElementById("provinceSection");
+    allOffices = offices || [];
+    allSurveyors = surveyors || [];
+
+    // แสดงส่วนตัวกรอง/จัดอันดับ/กราฟเปรียบเทียบเฉพาะเมื่อมีมากกว่า 1 สำนักงานให้เทียบ (ผู้ดูแลระบบ/ผู้บริหารเห็นหลาย
+    // จังหวัด/สาขา) — หัวหน้าช่างที่เห็นแค่สำนักงานตัวเอง หรือช่างรังวัด ไม่มีอะไรให้เทียบ จึงไม่ต้องแสดงส่วนนี้เลย
+    // แต่ KPI/โดนัทสถานะ/ตารางงานล่าสุด ยังต้องแสดงแบบไม่กรองอยู่ดี (renderFilteredDashboard กับ sel ว่าง)
+    if (!offices || offices.length <= 1) {
+      renderFilteredDashboard({ type: "all", province: "", officeId: "" });
+      return;
+    }
+
+    populateProvinceFilter(offices);
+    renderProvinceSection();
+    section.style.display = "block";
+  }
+
+  // เติมตัวเลือกใน <select> ตัวกรอง — แบบลำดับชั้น: "ภาพรวมทั้งหมด" -> จัดกลุ่ม (optgroup) ตามจังหวัด ซึ่งแต่ละกลุ่ม
+  // มีตัวเลือก "ภาพรวมทั้งจังหวัด" อยู่บนสุด ตามด้วยแต่ละสำนักงาน/สาขาในจังหวัดนั้น — ให้ผู้ใช้ซูมเข้าได้ทีละระดับ
+  function populateProvinceFilter(offices) {
+    const bar = document.getElementById("provinceFilterBar");
+    const groups = groupOfficesByProvince(offices);
+    const select = document.getElementById("provinceFilter");
+    select.innerHTML =
+      `<option value="">ภาพรวมทั้งหมด</option>` +
+      groups
+        .map(
+          (g) => `
+        <optgroup label="จังหวัด${g.province}">
+          <option value="province:${g.province}">ภาพรวมจังหวัด${g.province} (ทุกสาขา)</option>
+          ${g.offices
+            .map((o) => `<option value="office:${o.office_id}">${officeShortLabel(o.office_name)}</option>`)
+            .join("")}
+        </optgroup>`
+        )
+        .join("");
+    bar.style.display = "flex";
+  }
+
+  function onProvinceFilterChange() {
+    filterSelection = document.getElementById("provinceFilter").value;
+    renderProvinceSection();
+  }
+
+  // วาดใหม่ทั้งการ์ดจัดอันดับ 3 การ์ด และกราฟเปรียบเทียบด้านล่าง ตามตัวกรองปัจจุบัน — เรียกทุกครั้งที่ตัวกรองเปลี่ยน
+  // คำนวณทั้งหมดจากข้อมูลที่โหลดไว้แล้วในเบราว์เซอร์ ไม่ยิง API ซ้ำ
+  function renderProvinceSection() {
+    const sel = parseFilterSelection();
+    // การ์ดจัดอันดับยังอิงตามขอบเขต "จังหวัด" เสมอ (ไม่ลงลึกถึงระดับสำนักงานเดียว) เพื่อให้เห็นบริบททั้งจังหวัดไว้ดู
+    // แม้จะซูมกราฟด้านล่างไปที่สำนักงานหนึ่งโดยเฉพาะแล้วก็ตาม
+    const officesInScope = sel.province ? allOffices.filter((o) => o.province === sel.province) : allOffices;
+
+    renderRankings(officesInScope, sel);
+    renderComparisonChart(sel, officesInScope);
+    renderFilteredDashboard(sel);
+  }
+
+  function renderRankings(officesInScope, sel) {
+    const grid = document.getElementById("rankGrid");
+    grid.style.display = "grid";
+
+    // 5 อันดับจังหวัดที่มีงานค้างมากที่สุด — มีความหมายเฉพาะตอนดูภาพรวมทุกจังหวัดเท่านั้น
+    // (ซูมไปจังหวัด/สำนักงานใดแล้วจะเหลือขอบเขตเดียว จึงซ่อนการ์ดนี้ไปเมื่อกรอง)
+    const provinceCard = document.getElementById("rankProvinceCard");
+    if (sel.type !== "all") {
+      provinceCard.style.display = "none";
+    } else {
+      const groups = groupOfficesByProvince(allOffices);
+      const provinceRows = groups
+        .map((g) => ({
+          label: "จังหวัด" + g.province,
+          value: g.offices.reduce((s, o) => s + o.pending_cases, 0),
+          sublabel: g.offices.length + " สำนักงาน/สาขา",
+        }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+      provinceCard.style.display = groups.length > 1 ? "" : "none";
+      renderRankedBarList(document.getElementById("rankProvinceList"), provinceRows, { emptyText: "ไม่มีงานค้าง" });
+    }
+
+    // 5 อันดับสำนักงานที่มีงานค้างมากที่สุด (ตามขอบเขตจังหวัดปัจจุบัน)
+    const officeRows = [...officesInScope]
+      .sort((a, b) => b.pending_cases - a.pending_cases)
+      .slice(0, 5)
+      .map((o) => ({
+        label: officeShortLabel(o.office_name),
+        value: o.pending_cases,
+        // ไม่กรองจังหวัด (ดูหลายจังหวัดพร้อมกัน) ต้องบอกชื่อจังหวัดกำกับไว้ด้วย กันสับสนชื่อสาขาซ้ำกันคนละจังหวัด
+        sublabel: sel.type === "all" ? "จังหวัด" + o.province : "",
+      }));
+    renderRankedBarList(document.getElementById("rankOfficeList"), officeRows, { emptyText: "ไม่มีงานค้าง" });
+
+    // ช่างรังวัดที่มีงานค้างมากที่สุด (top 10) — เฉพาะช่างที่ยังเปิดใช้งานบัญชีอยู่ และมีงานค้างจริง
+    const officeIdsInScope = new Set(officesInScope.map((o) => o.office_id));
+    const surveyorRows = allSurveyors
+      .filter((s) => s.user_is_active && s.active_case_count > 0 && officeIdsInScope.has(s.office_id))
+      .sort((a, b) => b.active_case_count - a.active_case_count)
+      .slice(0, 10)
+      .map((s) => ({
+        label: s.full_name,
+        value: s.active_case_count,
+        sublabel: officeShortLabel(s.office_name) + (sel.type === "all" ? " · จังหวัด" + s.office_province : ""),
+      }));
+    renderRankedBarList(document.getElementById("rankSurveyorList"), surveyorRows, { emptyText: "ไม่มีช่างที่มีงานค้าง" });
+  }
+
+  // กราฟเปรียบเทียบเดียว (แทนที่การ์ดแยกรายจังหวัดแบบเดิม) — ปรับระดับความละเอียดตามตัวกรอง 3 แบบ:
+  //   - ภาพรวมทั้งหมด (sel.type === "all"): 1 แถว = 1 สำนักงาน/สาขา ทุกจังหวัดรวมกัน ป้ายชื่อระบุทั้งจังหวัดและสาขา
+  //     เพื่อเทียบละเอียดที่สุดในกราฟเดียว
+  //   - เลือกจังหวัดหนึ่ง (sel.type === "province"): กรองเหลือเฉพาะสำนักงาน/สาขาของจังหวัดนั้น (ไม่ปนจังหวัดอื่น)
+  //     1 แถว = 1 สำนักงาน/สาขาในจังหวัดที่เลือก — ให้เห็นเฉพาะข้อมูลจังหวัดและสาขาของจังหวัดนั้นเท่านั้น
+  //   - เลือกสำนักงาน/สาขาหนึ่ง (sel.type === "office"): แสดงแท่งเดียวของสำนักงานนั้นโดยเฉพาะ
+  function renderComparisonChart(sel, officesInScope) {
+    const container = document.getElementById("comparisonChart");
+    const titleEl = document.getElementById("comparisonTitle");
+    const summaryEl = document.getElementById("comparisonSummary");
+    let rows, title, chartOpts;
+
+    if (sel.type === "office") {
+      const o = allOffices.find((of) => of.office_id === sel.officeId);
+      rows = o ? [{ ...o, label: officeShortLabel(o.office_name) }] : [];
+      title = o ? `จังหวัด${o.province} · ${officeShortLabel(o.office_name)}` : "สำนักงาน";
+      chartOpts = { labelW: 170 };
+    } else if (sel.type === "province") {
+      rows = officesInScope.map((o) => ({ ...o, label: officeShortLabel(o.office_name) }));
+      title = `จังหวัด${sel.province} (ทุกสาขา)`;
+      chartOpts = { labelW: 170 };
+    } else {
+      // ป้ายชื่อจังหวัดแยกเป็นบรรทัดเล็กใต้ชื่อสำนักงาน (sublabel) แทนการต่อสตริงรวมกันเป็นบรรทัดเดียว
+      // เพราะชื่อจังหวัด+ชื่อสำนักงานรวมกันยาวเกินคอลัมน์ป้ายชื่อ จะถูกตัดหายไปเมื่อวาดเป็น SVG (ดู charts.js)
+      rows = allOffices.map((o) => ({
+        ...o,
+        label: officeShortLabel(o.office_name),
+        sublabel: "จังหวัด" + o.province,
+      }));
+      title = "เปรียบเทียบทุกจังหวัดและสำนักงาน";
+      chartOpts = { labelW: 175 };
+    }
+
+    titleEl.textContent = title;
+    if (rows.length) {
+      const total = rows.reduce((s, r) => s + r.total_cases, 0);
+      const pending = rows.reduce((s, r) => s + r.pending_cases, 0);
+      const overdue = rows.reduce((s, r) => s + r.overdue_cases, 0);
+      summaryEl.innerHTML = `
+        งานทั้งหมด <b style="color:var(--text);">${total}</b>
+        &nbsp;·&nbsp; ค้าง <b style="color:var(--warning);">${pending}</b>
+        &nbsp;·&nbsp; เกินกำหนด <b style="color:var(--danger);">${overdue}</b>
+        &nbsp;·&nbsp; ${rows.length} รายการ
+      `;
+    } else {
+      summaryEl.innerHTML = "";
+    }
+
+    renderOfficeBarChart(container, rows, chartOpts);
+  }
+
+  // สถานะที่ถือว่า "ปิดงานแล้ว" — ถอนจ่ายแล้ว/ยกเลิก/งดรังวัด (ตามที่ผู้ใช้ระบบยืนยัน ไม่รวม COMPLETED เพราะไม่มี
+  // เส้นทางไหนในระบบตั้งสถานะนี้จริง) ตรงกับ CaseStatus.CLOSED_SET ฝั่ง backend (ดู constants.py) — ใช้คำนวณ
+  // งานค้าง/เกินกำหนดจากรายการเรื่องที่ดึงมาแล้ว (allCases) แทนการยิง /dashboard/summary ซ้ำ เพื่อให้กรองตาม
+  // จังหวัด/สำนักงานที่เลือกได้ (endpoint เดิมคืนแค่ยอดรวมตามสิทธิ์ ไม่รับพารามิเตอร์กรองแบบนี้)
+  const CLOSED_STATUSES = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED"]);
+
+  // จุดรวมสำหรับ "กรองข้อมูลทั้งหน้า" ตามตัวกรองจังหวัด/สำนักงานปัจจุบัน — เรียกทุกครั้งที่ตัวกรองเปลี่ยน
+  // (จาก renderProvinceSection) และตอนโหลดหน้าครั้งแรก ทำให้ KPI การ์ด/โดนัทสถานะ/ตารางงานล่าสุด เปลี่ยนตาม
+  // ขอบเขตที่เลือกไปพร้อมกับการ์ดจัดอันดับและกราฟเปรียบเทียบด้านบน
+  function renderFilteredDashboard(sel) {
+    let officeIdsInScope = null; // null = ไม่กรอง (เห็นทุกสำนักงานตามสิทธิ์เดิม)
+    if (sel.officeId) {
+      officeIdsInScope = new Set([sel.officeId]);
+    } else if (sel.province) {
+      officeIdsInScope = new Set(allOffices.filter((o) => o.province === sel.province).map((o) => o.office_id));
+    }
+    const casesInScope = officeIdsInScope ? allCases.filter((c) => officeIdsInScope.has(c.office_id)) : allCases;
+
+    updateDashboardSubtitle(sel);
+    renderSummary(casesInScope);
+    renderStatusCounts(casesInScope);
+    renderStatusDonut(casesInScope);
+    renderRecentCases(casesInScope);
+  }
+
+  // อัปเดตคำอธิบายใต้หัวข้อ Dashboard ให้บอกขอบเขตที่กำลังดูอยู่ชัดเจน กันสับสนว่าตัวเลขที่เห็นเป็นของทั้งระบบ
+  // หรือกรองเฉพาะจังหวัด/สำนักงานหนึ่งอยู่
+  function updateDashboardSubtitle(sel) {
+    const el = document.getElementById("dashboardSubtitle");
+    if (!el) return;
+    let scopeText = "";
+    if (sel.type === "office") {
+      const o = allOffices.find((of) => of.office_id === sel.officeId);
+      if (o) scopeText = ` — กำลังดูเฉพาะ${officeShortLabel(o.office_name)} จังหวัด${o.province}`;
+    } else if (sel.type === "province") {
+      scopeText = ` — กำลังดูเฉพาะจังหวัด${sel.province}`;
+    }
+    el.textContent = "ภาพรวมงานรังวัดตามสิทธิ์ของท่าน" + scopeText;
+  }
+
+  function renderSummary(cases) {
+    const nowIso = new Date().toISOString();
+    const total = cases.length;
+    const pending = cases.filter((c) => !CLOSED_STATUSES.has(c.status)).length;
+    const overdue = cases.filter((c) => c.due_date && c.due_date < nowIso && !CLOSED_STATUSES.has(c.status)).length;
+    // งานเสร็จของช่าง — นับรวมทุกสถานะที่ถือว่า "จบงานแล้ว" คือ ถอนจ่ายแล้ว/ยกเลิก/งดรังวัด (ตามที่ผู้ใช้ระบบยืนยัน
+    // ให้ตรงกับ CLOSED_STATUSES ด้านบน) ต่างจาก kpi.completed ในหน้าโปรไฟล์ช่างรังวัด (surveyor-profile.html) ที่ยัง
+    // นับเฉพาะ "ถอนจ่ายแล้ว" อย่างเดียว (แยกยกเลิก/งดรังวัดไว้คนละช่อง) — เป็นความต่างที่ตั้งใจระหว่างสองหน้านี้
+    const completed = cases.filter((c) => CLOSED_STATUSES.has(c.status)).length;
+    document.getElementById("kpiGrid").innerHTML = `
+      <div class="kpi-card">
+        <div class="value">${total}</div>
+        <div class="label">งานทั้งหมด</div>
+      </div>
+      <div class="kpi-card warn">
+        <div class="value">${pending}</div>
+        <div class="label">งานค้าง (ยังไม่ปิด)</div>
+      </div>
+      <div class="kpi-card danger">
+        <div class="value">${overdue}</div>
+        <div class="label">เกินกำหนด (วันทำการ)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="value">${completed}</div>
+        <div class="label">งานเสร็จของช่าง</div>
+      </div>
+    `;
+  }
+
+  // จำนวนสถานะงานทั้งหมด — รายละเอียดกว่าการ์ด KPI ด้านบน (ซึ่งสรุปแค่ 4 หมวดใหญ่) แสดงทุกสถานะที่มีเรื่องจริง
+  // อย่างน้อย 1 เรื่อง เรียงจากมากไปน้อย ใช้ badge สีเดียวกับที่ใช้ทั่วระบบ (statusBadge() ใน api.js) เพื่อให้จำสี
+  // แล้วเชื่อมโยงความหมายได้ทันที ไม่ต้องมีชุดสีใหม่ซ้ำซ้อนกับโดนัทสถานะด้านล่าง
+  function renderStatusCounts(cases) {
+    const counts = {};
+    cases.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    const rows = Object.keys(counts)
+      .map((status) => ({ status, count: counts[status] }))
+      .sort((a, b) => b.count - a.count);
+
+    const grid = document.getElementById("statusCountGrid");
+    if (!rows.length) {
+      grid.innerHTML = `<div class="empty-state">ยังไม่มีเรื่องในระบบ</div>`;
+      return;
+    }
+    grid.innerHTML = rows
+      .map(
+        (r) => `
+      <div class="status-count-item">
+        ${statusBadge(r.status)}
+        <span class="value">${r.count}</span>
+      </div>`
+      )
+      .join("");
+  }
+
+  function renderStatusDonut(cases) {
+    const counts = {};
+    cases.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    const segments = Object.keys(counts).map((status) => ({
+      label: STATUS_LABELS[status] || status,
+      count: counts[status],
+      color: STATUS_CHART_COLORS[status] || "#94a3b8",
+    }));
+    renderDonutChart(document.getElementById("statusDonut"), segments);
+  }
+
+  function renderRecentCases(cases) {
     const typeMap = {};
-    (types || []).forEach((t) => (typeMap[t.id] = t.name));
+    allSurveyTypes.forEach((t) => (typeMap[t.id] = t.name));
 
     const tbody = document.querySelector("#recentTable tbody");
     if (cases.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-state">ยังไม่มีเรื่องในระบบ</td></tr>`;
       return;
     }
+    // cases มาจาก /survey-cases ซึ่งเรียงตาม received_date DESC มาจาก backend อยู่แล้ว (ดู survey_cases.py) ไม่ต้อง sort ซ้ำ
     tbody.innerHTML = cases
       .slice(0, 10)
       .map(
