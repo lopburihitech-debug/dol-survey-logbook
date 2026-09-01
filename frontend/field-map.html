@@ -28,21 +28,17 @@
   </div>
 
   <div class="card">
-    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
-      <button type="button" class="btn btn-sm" id="modeDayBtn">รายวัน</button>
-      <button type="button" class="btn btn-sm" id="modeMonthBtn">รายเดือน</button>
-      <button type="button" class="btn btn-sm" id="modeYearBtn">รายปี</button>
-    </div>
-    <div class="cal-header" style="flex-wrap:wrap; gap:10px;">
-      <button class="btn btn-outline btn-sm" id="prevRangeBtn">&lsaquo; ก่อนหน้า</button>
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center;">
-        <div class="cal-month-label" id="rangeLabel">-</div>
-        <input type="date" id="dayPicker" style="display:none;">
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn btn-outline btn-sm" id="todayBtn">วันนี้</button>
-        <button class="btn btn-outline btn-sm" id="nextRangeBtn">ถัดไป &rsaquo;</button>
-      </div>
+    <!-- เดิมมีปุ่มโหมดรายวัน/รายสัปดาห์/รายเดือน/รายปี + ปุ่มเลื่อนก่อนหน้า/ถัดไป ผู้ใช้ระบบแจ้งว่าสับสน จึงตัดออกทั้งหมด
+         เหลือแค่เลือกช่วงวันที่เองตรงๆ (จากวันที่/ถึงวันที่) แบบเดียวกัน ตรงไปตรงมากว่า — เลือกวันที่แล้วโหลดผลทันที
+         ไม่ต้องกดปุ่มยืนยันซ้ำ (onchange ดูฟังก์ชัน bindRangeInputs) -->
+    <div class="filters" style="margin-bottom:0; align-items:center;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted);">จากวันที่
+        <input type="date" id="fromDateInput">
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted);">ถึงวันที่
+        <input type="date" id="toDateInput">
+      </label>
+      <button class="btn btn-outline btn-sm" id="todayBtn" type="button">วันนี้</button>
     </div>
     <div class="subtitle" id="rangeSummary" style="margin-top:10px; margin-bottom:0;"></div>
   </div>
@@ -66,9 +62,9 @@
     <div class="table-scroll">
     <table>
       <thead>
-        <tr><th></th><th>ช่างรังวัด</th><th>รว.12</th><th>ประเภทงาน</th><th>สำนักงาน</th><th>วันนัดรังวัด</th><th>ระยะทางจากสำนักงาน</th></tr>
+        <tr><th></th><th>ช่างรังวัด</th><th>รว.12</th><th>ประเภทงาน</th><th>สถานะ</th><th>สำนักงาน</th><th>วันนัดรังวัด</th><th>ระยะทางจากสำนักงาน</th></tr>
       </thead>
-      <tbody id="stopsBody"><tr><td colspan="7" class="loading">กำลังโหลด...</td></tr></tbody>
+      <tbody id="stopsBody"><tr><td colspan="8" class="loading">กำลังโหลด...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -92,7 +88,9 @@
       <div><span class="k">วันนัดรังวัด:</span> <span id="sp_appointment">-</span></div>
       <div><span class="k">ระยะทางจากสำนักงาน:</span> <span id="sp_distance">-</span></div>
     </div>
-    <div class="action-bar">
+    <div class="action-bar" style="flex-wrap:wrap;">
+      <a class="btn btn-outline" id="sp_callBtn" href="#" style="display:none;">📞 โทรหาผู้ขอ</a>
+      <a class="btn btn-outline" id="sp_navigateBtn" href="#" target="_blank" rel="noopener">🧭 นำทางไปแปลง</a>
       <button class="btn btn-primary" id="sp_viewBtn">ดูรายละเอียดเรื่อง</button>
       <button type="button" class="btn btn-outline" onclick="closeStopPopup()">ปิด</button>
     </div>
@@ -103,8 +101,12 @@
 <script>
   requireAuth();
 
-  // เฉพาะบทบาทเชิงบริหาร/หัวหน้า — ดูเหตุผลที่คอมเมนต์ตรงลิงก์เมนูใน js/api.js (renderTopbar)
-  const ALLOWED_ROLES = ["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"];
+  // เดิมจำกัดเฉพาะบทบาทเชิงบริหาร/หัวหน้า ตอนนี้เปิดให้ช่างรังวัด (surveyor) ใช้ได้ด้วยตามที่ผู้ใช้ระบบขอ — ปลอดภัย
+  // เพราะ /survey-cases (ที่ loadRange() ด้านล่างเรียก) จำกัดขอบเขตให้ช่างรังวัดเห็นเฉพาะเรื่องที่ตนรับผิดชอบอยู่แล้ว
+  // โดยอัตโนมัติผ่าน scope_case_filter() ฝั่ง backend (helpers.py) ไม่ต้องแก้ backend เพิ่ม — ส่วนตัวกรองจังหวัด/
+  // สำนักงานยังคงซ่อนสำหรับช่างรังวัดเหมือนเดิม (ดูเงื่อนไขเปิด filterCard ด้านล่าง) เพราะช่างรังวัดเห็นแค่เรื่องตัวเอง
+  // อยู่แล้ว ไม่มีอะไรให้กรองเพิ่ม ดูเหตุผลเดิมของบทบาทอื่นที่คอมเมนต์ตรงลิงก์เมนูใน js/api.js (renderTopbar)
+  const ALLOWED_ROLES = ["system_admin", "administrator", "province_admin", "supervisor", "branch_admin", "surveyor"];
 
   let currentUser = null;
   let offices = [];
@@ -120,8 +122,11 @@
   }
 
   const now = new Date();
-  let rangeMode = "month"; // day | month | year — ค่าเริ่มต้นเป็นรายเดือน (เห็นภาพรวมงานทั้งเดือนตั้งแต่เปิดหน้า)
-  let viewDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // ช่วงวันที่ที่กำลังแสดง — เดิมมีโหมดรายวัน/รายสัปดาห์/รายเดือน/รายปีให้เลือก ผู้ใช้ระบบแจ้งว่าสับสน จึงตัดออกเหลือ
+  // แค่เลือกช่วงวันที่เอง (จากวันที่/ถึงวันที่) ตรงๆ แทน ค่าเริ่มต้นคือเดือนปัจจุบันทั้งเดือน ให้เห็นภาพรวมงานตั้งแต่
+  // เปิดหน้าเหมือนพฤติกรรมเดิม (ผู้ใช้ปรับช่วงเองได้ทันทีจากช่องวันที่)
+  let fromDateStr = dateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+  let toDateStr = dateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0)); // วันสุดท้ายของเดือนนี้
 
   async function init() {
     currentUser = await renderTopbar("field-map");
@@ -156,23 +161,10 @@
       }
     }
 
-    document.getElementById("modeDayBtn").addEventListener("click", () => setMode("day"));
-    document.getElementById("modeMonthBtn").addEventListener("click", () => setMode("month"));
-    document.getElementById("modeYearBtn").addEventListener("click", () => setMode("year"));
-    document.getElementById("prevRangeBtn").addEventListener("click", () => stepRange(-1));
-    document.getElementById("nextRangeBtn").addEventListener("click", () => stepRange(1));
-    document.getElementById("todayBtn").addEventListener("click", () => {
-      viewDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      loadRange();
-    });
-    document.getElementById("dayPicker").addEventListener("change", (e) => {
-      if (!e.target.value) return;
-      const [y, m, d] = e.target.value.split("-").map(Number);
-      viewDate = new Date(y, m - 1, d);
-      loadRange();
-    });
+    document.getElementById("fromDateInput").value = fromDateStr;
+    document.getElementById("toDateInput").value = toDateStr;
+    bindRangeInputs();
 
-    updateModeButtons();
     await loadRange();
   }
 
@@ -237,62 +229,56 @@
   }
 
   // ---------------------------------------------------------------------------
-  // โหมดช่วงเวลา (รายวัน/รายเดือน/รายปี) + การเลื่อนช่วง
+  // ช่วงวันที่ — เลือกเอง (จากวันที่/ถึงวันที่) เปลี่ยนค่าแล้วโหลดผลใหม่ทันที ไม่ต้องกดปุ่มยืนยันซ้ำ ถ้าเผลอเลือก
+  // "ถึงวันที่" มาก่อน "จากวันที่" จนช่วงกลับด้าน จะสลับให้อัตโนมัติ (normalizeRangeOrder) ปุ่ม "วันนี้" รีเซ็ตกลับมา
+  // เป็นวันเดียว (วันนี้)
   // ---------------------------------------------------------------------------
-  function setMode(mode) {
-    if (mode === rangeMode) return;
-    rangeMode = mode;
-    updateModeButtons();
-    loadRange();
-  }
-
-  function updateModeButtons() {
-    ["day", "month", "year"].forEach((m) => {
-      const btn = document.getElementById("mode" + m.charAt(0).toUpperCase() + m.slice(1) + "Btn");
-      btn.className = "btn btn-sm " + (m === rangeMode ? "btn-primary" : "btn-outline");
+  function bindRangeInputs() {
+    document.getElementById("fromDateInput").addEventListener("change", (e) => {
+      if (!e.target.value) return;
+      fromDateStr = e.target.value;
+      normalizeRangeOrder();
+      loadRange();
     });
-    document.getElementById("dayPicker").style.display = rangeMode === "day" ? "" : "none";
+    document.getElementById("toDateInput").addEventListener("change", (e) => {
+      if (!e.target.value) return;
+      toDateStr = e.target.value;
+      normalizeRangeOrder();
+      loadRange();
+    });
+    document.getElementById("todayBtn").addEventListener("click", () => {
+      fromDateStr = dateStr(now);
+      toDateStr = dateStr(now);
+      document.getElementById("fromDateInput").value = fromDateStr;
+      document.getElementById("toDateInput").value = toDateStr;
+      loadRange();
+    });
   }
 
-  function stepRange(delta) {
-    if (rangeMode === "day") viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + delta);
-    else if (rangeMode === "month") viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1);
-    else viewDate = new Date(viewDate.getFullYear() + delta, 0, 1);
-    loadRange();
+  function normalizeRangeOrder() {
+    if (fromDateStr > toDateStr) {
+      [fromDateStr, toDateStr] = [toDateStr, fromDateStr];
+      document.getElementById("fromDateInput").value = fromDateStr;
+      document.getElementById("toDateInput").value = toDateStr;
+    }
   }
 
   function dateStr(d) {
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
 
-  // ขอบเขตวันที่ของช่วงที่กำลังแสดง — appointment_to เป็นขอบเขตแบบ "ไม่รวม" เสมอ (ดูเหตุผลใน calendar.html/backend)
+  // ขอบเขตวันที่สำหรับเรียก API — appointment_to เป็นขอบเขตแบบ "ไม่รวม" เสมอ (ดูเหตุผลใน calendar.html/backend) ส่วน
+  // "ถึงวันที่" ที่ผู้ใช้เลือกหมายถึงรวมวันนั้นด้วย (ตามความเข้าใจทั่วไปของช่วงวันที่) จึงบวกไปอีก 1 วันตอนส่ง API
   function currentRange() {
-    if (rangeMode === "day") {
-      const from = dateStr(viewDate);
-      const to = dateStr(new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + 1));
-      return { from, to, label: fmtDateOnly(from) };
-    }
-    if (rangeMode === "month") {
-      const from = `${viewDate.getFullYear()}-${pad2(viewDate.getMonth() + 1)}-01`;
-      const nextMonth = viewDate.getMonth() === 11 ? 0 : viewDate.getMonth() + 1;
-      const nextYear = viewDate.getMonth() === 11 ? viewDate.getFullYear() + 1 : viewDate.getFullYear();
-      const to = `${nextYear}-${pad2(nextMonth + 1)}-01`;
-      const label = viewDate.toLocaleDateString("th-TH", { year: "numeric", month: "long" });
-      return { from, to, label };
-    }
-    // year
-    const from = `${viewDate.getFullYear()}-01-01`;
-    const to = `${viewDate.getFullYear() + 1}-01-01`;
-    const label = viewDate.toLocaleDateString("th-TH", { year: "numeric" });
-    return { from, to, label };
+    const [ty, tm, td] = toDateStr.split("-").map(Number);
+    const toExclusive = dateStr(new Date(ty, tm - 1, td + 1));
+    return { from: fromDateStr, to: toExclusive };
   }
 
   async function loadRange() {
-    const { from, to, label } = currentRange();
-    document.getElementById("rangeLabel").textContent = label;
-    document.getElementById("dayPicker").value = dateStr(viewDate);
+    const { from, to } = currentRange();
     document.getElementById("fieldMapWrap").innerHTML = `<div class="loading">กำลังโหลด...</div>`;
-    document.getElementById("stopsBody").innerHTML = `<tr><td colspan="7" class="loading">กำลังโหลด...</td></tr>`;
+    document.getElementById("stopsBody").innerHTML = `<tr><td colspan="8" class="loading">กำลังโหลด...</td></tr>`;
 
     const params = new URLSearchParams({ appointment_from: from, appointment_to: to });
     const cases = ((await apiFetch("/survey-cases?" + params.toString())) || []).filter(matchesOfficeFilter);
@@ -349,12 +335,16 @@
 
   function renderRangeSummary() {
     const box = document.getElementById("rangeSummary");
+    // แสดงช่วงวันที่ที่เลือกไว้ก่อนเสมอ (เดิมมีป้ายเดือน/ปีแยกต่างหากจากปุ่มโหมด ตอนนี้ตัดปุ่มโหมดออกแล้วจึงรวมมาไว้
+    // ในบรรทัดสรุปนี้แทน) ตามด้วยจำนวนเรื่องที่พบ
+    const rangeLabel = fromDateStr === toDateStr ? fmtDateOnly(fromDateStr) : `${fmtDateOnly(fromDateStr)} - ${fmtDateOnly(toDateStr)}`;
     const parts = [`ปักหมุดได้ ${currentStops.length} เรื่อง`];
     if (currentNoCoordCases.length) parts.push(`${currentNoCoordCases.length} เรื่องไม่มีพิกัดแปลง (ไม่แสดงบนแผนที่)`);
     if (filters.province || filters.officeId) parts.push("ตามตัวกรองที่เลือก");
-    box.textContent = currentStops.length === 0 && currentNoCoordCases.length === 0
+    const statusText = currentStops.length === 0 && currentNoCoordCases.length === 0
       ? "ไม่มีเรื่องที่นัดรังวัดในช่วงที่เลือก"
       : parts.join(" · ");
+    box.textContent = `${rangeLabel} · ${statusText}`;
   }
 
   function renderNoCoordList() {
@@ -375,29 +365,28 @@
   }
 
   // ---------------------------------------------------------------------------
-  // สีประจำช่างแต่ละคน (คงที่ตลอดการเปิดหน้านี้ 1 ครั้ง) ใช้เป็นขอบวงกลมรูป ให้แยกช่างออกจากกันได้ง่ายบนแผนที่
-  // แม้จะยังโหลดรูปถ่ายไม่เสร็จ (ตัวอักษรย่อก็ยังมีขอบสีต่างกันช่วยแยกได้)
-  // ---------------------------------------------------------------------------
-  const STOP_COLORS = ["#dc2626", "#2563eb", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#16a34a", "#ca8a04", "#4f46e5", "#059669"];
-  let surveyorColorMap = {};
-  function colorForSurveyor(surveyorId) {
-    if (!surveyorColorMap[surveyorId]) {
-      const idx = Object.keys(surveyorColorMap).length % STOP_COLORS.length;
-      surveyorColorMap[surveyorId] = STOP_COLORS[idx];
-    }
-    return surveyorColorMap[surveyorId];
+  // สีขอบรูปช่าง/หมุด — ใช้บอก "จบงานแล้วหรือยัง" ตามที่ผู้ใช้ระบบขอ (ไม่ใช่แยกตัวช่างอีกต่อไป): เขียว = สถานะเรื่อง
+  // เป็น "รังวัดเสร็จแล้ว" (SURVEY_DONE) หรือ "ถอนจ่ายแล้ว" (CLOSED) ถือว่าจบงานภาคสนามแล้วจริงๆ ส่วนสถานะอื่นทั้งหมด
+  // (ยังไม่ได้ลงพื้นที่/อยู่ระหว่างดำเนินการ) ใช้แดง ให้หัวหน้าช่างเห็นจากแผนที่ได้ทันทีว่าเรื่องไหนยังต้องติดตาม โดยไม่
+  // ต้องคลิกเข้าไปดูทีละจุด — ใช้ตัวแปรสีธีมเดียวกับ badge สถานะทั่วระบบ (var(--success)/var(--danger) ใน
+  // css/style.css) แต่จัดกลุ่มสถานะต่างจาก badge ปกติโดยเจตนา (badge ปกติจัด SURVEY_DONE เป็นสีน้ำเงินกลุ่มเดียวกับ
+  // "รอตรวจ/รออนุมัติ" เพราะสื่อความหมาย "สถานะปัจจุบัน" ส่วนที่นี่ต้องการสื่อ "งานภาคสนามจบหรือยัง" ซึ่งเป็นคำถามคนละ
+  // แบบกัน จึงต้องมีชุดสีของตัวเองแยกจาก STATUS_LABELS/.badge.status-* ใน js/api.js)
+  const FIELD_DONE_STATUSES = new Set(["SURVEY_DONE", "CLOSED"]);
+  function stopMarkerColor(status) {
+    return FIELD_DONE_STATUSES.has(status) ? "var(--success)" : "var(--danger)";
   }
 
   function renderStopsTable() {
     const tbody = document.getElementById("stopsBody");
     if (!currentStops.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ไม่มีจุดที่จะแสดงในช่วงเวลานี้</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">ไม่มีจุดที่จะแสดงในช่วงเวลานี้</td></tr>`;
       return;
     }
     const sorted = currentStops.slice().sort((a, b) => (a.case.appointment_date || "").localeCompare(b.case.appointment_date || ""));
     tbody.innerHTML = sorted
       .map((s) => {
-        const color = colorForSurveyor(s.surveyor.surveyor_id);
+        const color = stopMarkerColor(s.case.status);
         const initial = (s.surveyor.full_name || "?").charAt(0);
         return `
         <tr class="clickable" onclick="openStopPopup('${s.uid}')">
@@ -405,6 +394,7 @@
           <td>${surveyorLabel(s.surveyor)}</td>
           <td>${s.case.case_code}</td>
           <td>${typeMap[s.case.survey_type_id] || "-"}</td>
+          <td>${STATUS_LABELS[s.case.status] || s.case.status}</td>
           <td>${s.office ? s.office.name : "-"}</td>
           <td>${fmtDateOnly(s.case.appointment_date)}</td>
           <td>${s.distanceKm === null ? "<span class='subtitle' style='font-size:12px;'>ไม่มีพิกัดสำนักงาน</span>" : s.distanceKm.toFixed(1) + " กม."}</td>
@@ -446,17 +436,39 @@
     if (!s) return;
     const initial = (s.surveyor.full_name || "?").charAt(0);
     const cachedPhoto = photoUrlCache[s.surveyor.surveyor_id];
-    document.getElementById("sp_avatar").innerHTML = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : initial;
+    const spAvatar = document.getElementById("sp_avatar");
+    spAvatar.innerHTML = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : initial;
+    spAvatar.style.border = `4px solid ${stopMarkerColor(s.case.status)}`;
     document.getElementById("sp_surveyor").textContent = surveyorLabel(s.surveyor);
     document.getElementById("sp_office").textContent = s.office ? s.office.name : "ไม่ทราบสำนักงาน";
     document.getElementById("sp_code").textContent = s.case.case_code;
-    document.getElementById("sp_requester").textContent = s.case.requester_name || "-";
+    // เบอร์ติดต่อผู้ขอต่อท้ายชื่อในบรรทัดเดียวกัน แบบเดียวกับหน้ารายละเอียดเรื่อง (case.html) เพื่อให้รูปแบบตรงกัน
+    document.getElementById("sp_requester").textContent = s.case.requester_name
+      ? s.case.requester_name + (s.case.requester_contact ? " · " + s.case.requester_contact : "")
+      : "-";
     document.getElementById("sp_type").textContent = typeMap[s.case.survey_type_id] || "-";
     document.getElementById("sp_status").innerHTML = statusBadge(s.case.status);
     document.getElementById("sp_appointment").textContent = fmtDateOnly(s.case.appointment_date);
     document.getElementById("sp_distance").textContent = s.distanceKm === null
       ? "ไม่มีพิกัดสำนักงาน (เพิ่มได้ที่หน้าจัดการสำนักงาน)"
       : s.distanceKm.toFixed(1) + " กม. (เส้นตรง จากสำนักงานถึงแปลง)";
+
+    // ปุ่ม "โทรหาผู้ขอ" — ใช้ tel: ลิงก์ (เปิดแอปโทรศัพท์ของเครื่องเอง ไม่ใช่ JS โทรออกเอง) ซ่อนไว้ถ้าเรื่องนี้ไม่มี
+    // เบอร์ติดต่อผู้ขอบันทึกไว้ ตัดอักขระอื่นที่ไม่ใช่ตัวเลข/เครื่องหมาย + ออกก่อน เผื่อบันทึกเบอร์แบบมีขีด/เว้นวรรค
+    // (เช่น "081-234-5678") ไว้ ตัวแอปโทรศัพท์ส่วนใหญ่รองรับอยู่แล้วแต่ตัดให้สะอาดไว้ก่อนกันปัญหา
+    const callBtn = document.getElementById("sp_callBtn");
+    if (s.case.requester_contact) {
+      callBtn.href = "tel:" + s.case.requester_contact.replace(/[^0-9+]/g, "");
+      callBtn.style.display = "";
+    } else {
+      callBtn.style.display = "none";
+    }
+
+    // ปุ่ม "นำทางไปแปลง" — เปิด Google Maps นำทางไปยังพิกัดแปลงที่ดินของเรื่องนี้ (ไม่ใช่พิกัดสำนักงาน) มีทุกจุดเสมอ
+    // เพราะจุดที่ปักหมุดได้บนแผนที่ (currentStops) ต้องมีพิกัด lat/lng ของแปลงอยู่แล้วตั้งแต่ต้น (ดู buildStops())
+    document.getElementById("sp_navigateBtn").href =
+      `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`;
+
     document.getElementById("sp_viewBtn").onclick = () => (window.location.href = "/case.html?id=" + s.case.id);
     document.getElementById("stopPopup").style.display = "flex";
   }
@@ -569,6 +581,9 @@
       const h = latToGlobalPx(latMin, zoom) - latToGlobalPx(latMax, zoom);
       if (w <= width - 2 * pad && h <= height - 2 * pad) break;
     }
+    // ถ้าลด zoom จนต่ำกว่า MAP_MIN_ZOOM แล้วยังไม่พอดี (จุดกระจายกว้างมาก) ให้หยุดที่ MAP_MIN_ZOOM พอดี ไม่ต่ำกว่านั้น
+    // (ลูปข้างบนลด zoom เกินค่านี้ไป 1 ได้ในกรณีนี้ เพราะเช็คเงื่อนไข break หลังลดค่าแล้วเสมอ)
+    zoom = Math.max(zoom, MAP_MIN_ZOOM);
     mapView = { zoom, centerLng: (lngMin + lngMax) / 2, centerLat: (latMin + latMax) / 2 };
   }
 
@@ -653,10 +668,35 @@
     });
 
     // หมุดช่างรังวัด (รูปวงกลม + สีขอบประจำตัว) — คลิกเพื่อดูรายละเอียดเรื่องนั้น
+    //
+    // จุดที่พิกัดตรงกันพอดี (หรือใกล้กันมากจนซ้อนทับกันบนจอ) ต้องกระจายออกเป็นวงเล็กๆ รอบจุดเดิมก่อนวาด — ไม่งั้าจะ
+    // วาดหมุดทั้งหมดทับตำแหน่งพิกเซลเดียวกันเป๊ะ ทำให้เห็นแค่หมุดที่วาดหลังสุด (บนสุด) บังหมุดที่เหลือมิดจนดูเหมือน
+    // มีแค่หมุดเดียว ทั้งที่ปักหมุดได้ครบ (นับถูกต้องใน currentStops/rangeSummary อยู่แล้ว) — พบกรณีนี้จริงเช่น
+    // หลายเรื่องถูกกรอกลิงก์แผนที่เดียวกันไว้ (เช่น พิกัดสำนักงานเป็นค่าชั่วคราว ก่อนมีพิกัดแปลงจริงแยกแต่ละเรื่อง)
+    const CLUSTER_PX = 30; // ระยะห่างบนจอ (พิกเซล) ที่ถือว่า "ชนกัน" ต้องกระจายออก — ใกล้เคียงขนาดหมุด (36px)
+    const positionedStops = currentStops.map((s) => ({ s, p: toPx(s.lat, s.lng) }));
+    const stopClusters = [];
+    positionedStops.forEach((item) => {
+      const found = stopClusters.find((c) => Math.hypot(c.p.sx - item.p.sx, c.p.sy - item.p.sy) < CLUSTER_PX);
+      if (found) {
+        found.items.push(item);
+      } else {
+        stopClusters.push({ p: item.p, items: [item] });
+      }
+    });
+    stopClusters.forEach((cluster) => {
+      const n = cluster.items.length;
+      if (n < 2) return; // ไม่ชนกับใคร ใช้ตำแหน่งเดิมตรงๆ
+      const radius = 22;
+      cluster.items.forEach((item, idx) => {
+        const angle = (2 * Math.PI * idx) / n - Math.PI / 2; // เริ่มจากด้านบน ไล่ตามเข็มนาฬิกา
+        item.p = { sx: cluster.p.sx + radius * Math.cos(angle), sy: cluster.p.sy + radius * Math.sin(angle) };
+      });
+    });
+
     let stopMarkersHtml = "";
-    currentStops.forEach((s) => {
-      const p = toPx(s.lat, s.lng);
-      const color = colorForSurveyor(s.surveyor.surveyor_id);
+    positionedStops.forEach(({ s, p }) => {
+      const color = stopMarkerColor(s.case.status);
       const initial = (s.surveyor.full_name || "?").charAt(0);
       const cachedPhoto = photoUrlCache[s.surveyor.surveyor_id];
       const inner = cachedPhoto ? `<img src="${cachedPhoto}" alt="">` : initial;
@@ -689,7 +729,10 @@
 
     attachFieldMapInteractions(wrap, width, height);
 
-    legend.innerHTML = `🏢 สำนักงาน · รูปวงกลม = ช่างรังวัด (สีขอบต่างกันตามตัวคน) — ระยะทางที่แสดงเป็นเส้นตรง (ไม่ใช่ระยะทางถนนจริง)
+    legend.innerHTML = `🏢 สำนักงาน · รูปวงกลม = ช่างรังวัด — ขอบ
+      <span style="display:inline-flex; align-items:center; gap:3px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--success); display:inline-block; border:1px solid rgba(0,0,0,.15);"></span>เขียว = รังวัดเสร็จแล้ว/ถอนจ่ายแล้ว</span> ·
+      <span style="display:inline-flex; align-items:center; gap:3px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--danger); display:inline-block; border:1px solid rgba(0,0,0,.15);"></span>แดง = สถานะอื่น (ยังไม่จบงาน)</span>
+      — ระยะทางที่แสดงเป็นเส้นตรง (ไม่ใช่ระยะทางถนนจริง)
       <div style="margin-top:4px;">แผนที่พื้นฐาน: ${basemap.attributionHtml} — ต้องมีอินเทอร์เน็ตเพื่อโหลดภาพแผนที่พื้นหลัง</div>`;
 
     // โหลดรูปช่างที่ยังไม่เคยโหลด (เผื่อสลับช่วงเวลามาเจอช่างคนใหม่ที่ยังไม่เคยแสดงในตาราง)

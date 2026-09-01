@@ -9,11 +9,18 @@ class Role:
     SUPERVISOR = "supervisor"  # หัวหน้าช่างรังวัด
     BRANCH_ADMIN = "branch_admin"  # เจ้าพนักงานที่ดินสาขา — เหมือนหัวหน้าช่างรังวัดทุกอย่าง (ขอบเขตจำกัดแค่สำนักงาน/สาขา
     # ของตัวเอง เช่นเดียวกับ supervisor) บวกสิทธิ์เพิ่มเติม: เพิ่ม/แก้ไขบัญชีช่างรังวัดในสาขาตนเองได้ (ดู surveyors.py)
+    # ผู้ดูแลระดับสาขา — เพิ่มตามที่ผู้ใช้ระบบขอ: บทบาทใหม่แยกต่างหากจาก BRANCH_ADMIN ข้างบน (ไม่เกี่ยวกับงานรังวัด/
+    # เคสใดๆ เลย ไม่มีสิทธิ์เห็นเมนูงานรังวัด/ปฏิทิน/แผนที่ช่างรังวัด ฯลฯ) มีสิทธิ์เดียวคือเข้าหน้า "จัดการผู้ใช้งาน"
+    # (users.py) ได้ แต่ถูกจำกัดขอบเขตแคบมาก: เห็น/สร้าง/แก้ไข/ตั้งรหัสผ่านใหม่/ปิด 2FA ได้เฉพาะบัญชีที่เป็น "ช่างรังวัด"
+    # (SURVEYOR) และอยู่สำนักงานเดียวกับตัวเองเท่านั้น (บังคับทั้ง office_id และ role ฝั่ง backend เสมอ ไม่พึ่งฝั่ง
+    # frontend อย่างเดียว) เปลี่ยนบทบาท/ย้ายสำนักงานของผู้ใช้ หรือแตะบัญชีบทบาทอื่นใดไม่ได้เลย — กันการเลื่อนสิทธิ์ตัวเอง/
+    # ผู้อื่นสูงเกินควร (ดู blueprints/users.py)
+    BRANCH_USER_ADMIN = "branch_user_admin"
     SURVEYOR = "surveyor"  # ช่างรังวัด
     CITIZEN = "citizen"  # ประชาชน (ใช้ tracking token/OTP แยกต่างหาก ไม่ผ่าน login นี้ — Phase 3)
 
-    ALL = [SYSTEM_ADMIN, ADMINISTRATOR, PROVINCE_ADMIN, SUPERVISOR, BRANCH_ADMIN, SURVEYOR, CITIZEN]
-    INTERNAL = [SYSTEM_ADMIN, ADMINISTRATOR, PROVINCE_ADMIN, SUPERVISOR, BRANCH_ADMIN, SURVEYOR]
+    ALL = [SYSTEM_ADMIN, ADMINISTRATOR, PROVINCE_ADMIN, SUPERVISOR, BRANCH_ADMIN, BRANCH_USER_ADMIN, SURVEYOR, CITIZEN]
+    INTERNAL = [SYSTEM_ADMIN, ADMINISTRATOR, PROVINCE_ADMIN, SUPERVISOR, BRANCH_ADMIN, BRANCH_USER_ADMIN, SURVEYOR]
 
 
 class CaseStatus:

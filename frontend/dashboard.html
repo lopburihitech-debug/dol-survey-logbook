@@ -61,20 +61,23 @@
   </div>
 
   <div class="card">
-    <h2>สัดส่วนสถานะงานทั้งหมด</h2>
-    <div id="statusDonut"><div class="loading">กำลังโหลด...</div></div>
+    <h2>งานค้างแยกตามประเภทงาน</h2>
+    <div id="typeBacklogChart"><div class="loading">กำลังโหลด...</div></div>
   </div>
 
   <div class="card">
-    <h2>งานล่าสุด</h2>
-    <div class="table-scroll">
-    <table id="recentTable">
-      <thead>
-        <tr><th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>วันรับเรื่อง</th><th>สถานะ</th></tr>
-      </thead>
-      <tbody><tr><td colspan="5" class="loading">กำลังโหลด...</td></tr></tbody>
-    </table>
-    </div>
+    <h2>งานออกโฉนดที่ดิน แยกตามสำนักงาน</h2>
+    <div id="titleDeedByOfficeChart"><div class="loading">กำลังโหลด...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>งานออกโฉนดที่ดิน แยกตามช่างรังวัด</h2>
+    <div id="titleDeedBySurveyorChart"><div class="loading">กำลังโหลด...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>สัดส่วนสถานะงานทั้งหมด</h2>
+    <div id="statusDonut"><div class="loading">กำลังโหลด...</div></div>
   </div>
 </div>
 
@@ -111,10 +114,19 @@
       // ไม่พบข้อมูลช่างรังวัดที่ตรงกับบัญชีนี้ (กรณีผิดปกติ) — แสดง dashboard ทั่วไปแทนดีกว่าค้างหน้าเปล่า
     }
 
-    // ดึงรายการเรื่องทั้งหมด (ตามสิทธิ์ที่เห็น) มาครั้งเดียว แล้วคำนวณ KPI/โดนัทสถานะ/ตารางงานล่าสุดจากชุดเดียวกันนี้
-    // ในเบราว์เซอร์ทั้งหมด — ใช้ endpoint เดิม (/survey-cases) ที่เดิมดึงมาแสดง "งานล่าสุด" อยู่แล้ว ไม่ได้เพิ่มการยิง
-    // API ใหม่ และทำให้ทุกส่วนของหน้ากรองตามจังหวัด/สำนักงานที่เลือกได้ (แทนที่ /dashboard/summary กับ
-    // /dashboard/status-breakdown ซึ่งกรองแบบนี้ไม่ได้ เพราะเป็นยอดรวมตามสิทธิ์อย่างเดียว ไม่รับพารามิเตอร์กรอง)
+    // ผู้ดูแลระดับสาขา (branch_user_admin) เช่นเดียวกับช่างรังวัดข้างบน — ไม่มีสิทธิ์เห็น Dashboard เลย (ไม่มีลิงก์
+    // นี้ในเมนูแล้ว ดู renderTopbar ใน api.js) แต่ login.html ก็พาไป /dashboard.html เสมอไม่ว่าบทบาทใด จึงต้อง
+    // ส่งต่อไปหน้าเดียวที่ใช้งานได้จริงคือ "จัดการผู้ใช้งาน" ทันที ไม่งั้นจะเจอหน้าเปล่า/ข้อมูลว่างเพราะ backend
+    // ปฏิเสธคำขอ (403) ทุก endpoint ที่หน้านี้เรียกใช้
+    if (user.role === "branch_user_admin") {
+      window.location.replace("/users.html");
+      return;
+    }
+
+    // ดึงรายการเรื่องทั้งหมด (ตามสิทธิ์ที่เห็น) มาครั้งเดียว แล้วคำนวณ KPI/โดนัทสถานะ/กราฟต่างๆ จากชุดเดียวกันนี้
+    // ในเบราว์เซอร์ทั้งหมด — ใช้ endpoint เดิม (/survey-cases) ไม่ได้เพิ่มการยิง API ใหม่ และทำให้ทุกส่วนของหน้า
+    // กรองตามจังหวัด/สำนักงานที่เลือกได้ (แทนที่ /dashboard/summary กับ /dashboard/status-breakdown ซึ่งกรองแบบนี้
+    // ไม่ได้ เพราะเป็นยอดรวมตามสิทธิ์อย่างเดียว ไม่รับพารามิเตอร์กรอง)
     const [cases, types] = await Promise.all([
       apiFetch("/survey-cases"),
       apiFetch("/survey-types"),
@@ -160,7 +172,7 @@
 
     // แสดงส่วนตัวกรอง/จัดอันดับ/กราฟเปรียบเทียบเฉพาะเมื่อมีมากกว่า 1 สำนักงานให้เทียบ (ผู้ดูแลระบบ/ผู้บริหารเห็นหลาย
     // จังหวัด/สาขา) — หัวหน้าช่างที่เห็นแค่สำนักงานตัวเอง หรือช่างรังวัด ไม่มีอะไรให้เทียบ จึงไม่ต้องแสดงส่วนนี้เลย
-    // แต่ KPI/โดนัทสถานะ/ตารางงานล่าสุด ยังต้องแสดงแบบไม่กรองอยู่ดี (renderFilteredDashboard กับ sel ว่าง)
+    // แต่ KPI/โดนัทสถานะ/กราฟประเภทงาน ยังต้องแสดงแบบไม่กรองอยู่ดี (renderFilteredDashboard กับ sel ว่าง)
     if (!offices || offices.length <= 1) {
       renderFilteredDashboard({ type: "all", province: "", officeId: "" });
       return;
@@ -296,12 +308,12 @@
     titleEl.textContent = title;
     if (rows.length) {
       const total = rows.reduce((s, r) => s + r.total_cases, 0);
+      // ค้าง = เกินกำหนด + ยังไม่เกินกำหนด รวมเป็นตัวเลขเดียว ไม่แยกโชว์ "เกินกำหนด" ต่างหากอีกต่อไป
+      // (pending_cases จาก backend รวมเกินกำหนดอยู่แล้ว ดู blueprints/dashboard.py) ให้ตรงกับกราฟด้านล่างที่เหลือ 2 สี
       const pending = rows.reduce((s, r) => s + r.pending_cases, 0);
-      const overdue = rows.reduce((s, r) => s + r.overdue_cases, 0);
       summaryEl.innerHTML = `
         งานทั้งหมด <b style="color:var(--text);">${total}</b>
         &nbsp;·&nbsp; ค้าง <b style="color:var(--warning);">${pending}</b>
-        &nbsp;·&nbsp; เกินกำหนด <b style="color:var(--danger);">${overdue}</b>
         &nbsp;·&nbsp; ${rows.length} รายการ
       `;
     } else {
@@ -318,7 +330,7 @@
   const CLOSED_STATUSES = new Set(["CLOSED", "CANCELLED", "SURVEY_SKIPPED"]);
 
   // จุดรวมสำหรับ "กรองข้อมูลทั้งหน้า" ตามตัวกรองจังหวัด/สำนักงานปัจจุบัน — เรียกทุกครั้งที่ตัวกรองเปลี่ยน
-  // (จาก renderProvinceSection) และตอนโหลดหน้าครั้งแรก ทำให้ KPI การ์ด/โดนัทสถานะ/ตารางงานล่าสุด เปลี่ยนตาม
+  // (จาก renderProvinceSection) และตอนโหลดหน้าครั้งแรก ทำให้ KPI การ์ด/โดนัทสถานะ/กราฟประเภทงาน เปลี่ยนตาม
   // ขอบเขตที่เลือกไปพร้อมกับการ์ดจัดอันดับและกราฟเปรียบเทียบด้านบน
   function renderFilteredDashboard(sel) {
     let officeIdsInScope = null; // null = ไม่กรอง (เห็นทุกสำนักงานตามสิทธิ์เดิม)
@@ -332,8 +344,88 @@
     updateDashboardSubtitle(sel);
     renderSummary(casesInScope);
     renderStatusCounts(casesInScope);
+    renderTypeBacklogChart(casesInScope);
+    renderTitleDeedCharts(casesInScope);
     renderStatusDonut(casesInScope);
-    renderRecentCases(casesInScope);
+  }
+
+  // รวมเรื่อง (cases) เป็นแถวสำหรับ renderOfficeBarChart() — จัดกลุ่มตาม keyFn แล้วนับ 3 ส่วนย่อยแบบเดียวกับที่ใช้ทั่ว
+  // หน้านี้ (เสร็จแล้ว/ค้างยังไม่เกินกำหนด/เกินกำหนด) ให้ตรงกับ CLOSED_STATUSES ด้านบน — labelFn/sublabelFn รับ
+  // (key, ตัวอย่างเรื่องแรกที่เจอของกลุ่มนั้น) เพื่อดึงชื่อที่อ่านง่ายมาแสดงแทนรหัส
+  function aggregateCasesBy(cases, keyFn, labelFn, sublabelFn) {
+    const nowIso = new Date().toISOString();
+    const map = {};
+    cases.forEach((c) => {
+      const key = keyFn(c) || "__none__";
+      if (!map[key]) map[key] = { total: 0, pending: 0, completed: 0, overdue: 0, sample: c };
+      const m = map[key];
+      m.total++;
+      const closed = CLOSED_STATUSES.has(c.status);
+      if (closed) m.completed++;
+      else m.pending++;
+      if (!closed && c.due_date && c.due_date < nowIso) m.overdue++;
+    });
+    return Object.keys(map).map((key) => ({
+      label: labelFn(key, map[key].sample),
+      sublabel: sublabelFn ? sublabelFn(key, map[key].sample) : undefined,
+      total_cases: map[key].total,
+      pending_cases: map[key].pending,
+      completed_cases: map[key].completed,
+      overdue_cases: map[key].overdue,
+    }));
+  }
+
+  // กราฟแท่งงานค้างแยกตามประเภทงาน (ทุกประเภท) — ใช้ allSurveyTypes แปลง survey_type_id เป็นชื่อประเภทที่อ่านง่าย
+  function renderTypeBacklogChart(cases) {
+    const typeNameMap = {};
+    allSurveyTypes.forEach((t) => (typeNameMap[t.id] = t.name));
+    const rows = aggregateCasesBy(
+      cases,
+      (c) => c.survey_type_id,
+      (key) => typeNameMap[key] || "ไม่ระบุประเภทงาน"
+    );
+    renderOfficeBarChart(document.getElementById("typeBacklogChart"), rows, { labelW: 190 });
+  }
+
+  // กราฟแท่งงานประเภท "ออกโฉนดที่ดิน" อย่างเดียว แยกตามสำนักงาน และแยกตามช่างรังวัด (2 กราฟ) — กรองเฉพาะเรื่องที่
+  // ประเภทงานตรงกับชื่อนี้เป๊ะๆ ก่อน ถ้าระบบยังไม่มีประเภทงานชื่อนี้เลย (เช่น ข้อมูลชุดทดสอบ) แสดงข้อความแจ้งแทน
+  // การขึ้นกราฟว่างเปล่าให้สับสน
+  function renderTitleDeedCharts(cases) {
+    const officeContainer = document.getElementById("titleDeedByOfficeChart");
+    const surveyorContainer = document.getElementById("titleDeedBySurveyorChart");
+    const titleDeedType = allSurveyTypes.find((t) => t.name === "ออกโฉนดที่ดิน");
+    if (!titleDeedType) {
+      const msg = `<div class="empty-state">ยังไม่มีประเภทงาน "ออกโฉนดที่ดิน" ในระบบ</div>`;
+      officeContainer.innerHTML = msg;
+      surveyorContainer.innerHTML = msg;
+      return;
+    }
+    const filtered = cases.filter((c) => c.survey_type_id === titleDeedType.id);
+
+    const officeMap = {};
+    allOffices.forEach((o) => (officeMap[o.office_id] = o));
+    const officeRows = aggregateCasesBy(
+      filtered,
+      (c) => c.office_id,
+      (key) => (officeMap[key] ? officeShortLabel(officeMap[key].office_name) : "ไม่ระบุสำนักงาน"),
+      (key) => (officeMap[key] ? "จังหวัด" + officeMap[key].province : "")
+    );
+    renderOfficeBarChart(officeContainer, officeRows, { labelW: 175 });
+
+    // อ้างอิงชื่อ/สังกัดของช่างรังวัดจาก allSurveyors (มี office_name/office_province ให้พร้อม) แทนการอ่านจาก
+    // ตัวอย่างเรื่องแรกของกลุ่ม เพราะแม่นยำกว่าในกรณีช่างคนเดียวมีเรื่องอยู่คนละสำนักงาน (ไม่ควรเกิดขึ้นจริง แต่กันไว้)
+    const surveyorMap = {};
+    allSurveyors.forEach((s) => (surveyorMap[s.id] = s));
+    const surveyorRows = aggregateCasesBy(
+      filtered,
+      (c) => (c.assigned_surveyor ? c.assigned_surveyor.surveyor_id : null),
+      (key, sample) => (sample && sample.assigned_surveyor ? sample.assigned_surveyor.full_name : "ยังไม่มอบหมาย"),
+      (key) => {
+        const s = surveyorMap[key];
+        return s ? officeShortLabel(s.office_name) + " · จังหวัด" + s.office_province : "";
+      }
+    );
+    renderOfficeBarChart(surveyorContainer, surveyorRows, { labelW: 190 });
   }
 
   // อัปเดตคำอธิบายใต้หัวข้อ Dashboard ให้บอกขอบเขตที่กำลังดูอยู่ชัดเจน กันสับสนว่าตัวเลขที่เห็นเป็นของทั้งระบบ
@@ -415,31 +507,6 @@
       color: STATUS_CHART_COLORS[status] || "#94a3b8",
     }));
     renderDonutChart(document.getElementById("statusDonut"), segments);
-  }
-
-  function renderRecentCases(cases) {
-    const typeMap = {};
-    allSurveyTypes.forEach((t) => (typeMap[t.id] = t.name));
-
-    const tbody = document.querySelector("#recentTable tbody");
-    if (cases.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">ยังไม่มีเรื่องในระบบ</td></tr>`;
-      return;
-    }
-    // cases มาจาก /survey-cases ซึ่งเรียงตาม received_date DESC มาจาก backend อยู่แล้ว (ดู survey_cases.py) ไม่ต้อง sort ซ้ำ
-    tbody.innerHTML = cases
-      .slice(0, 10)
-      .map(
-        (c) => `
-      <tr class="clickable" onclick="window.location.href='/case.html?id=${c.id}'">
-        <td>${c.case_code}</td>
-        <td>${c.requester_name}</td>
-        <td>${typeMap[c.survey_type_id] || "-"}</td>
-        <td>${fmtDate(c.received_date)}</td>
-        <td>${statusBadge(c.status)}</td>
-      </tr>`
-      )
-      .join("");
   }
 
   init();

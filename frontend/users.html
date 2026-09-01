@@ -15,7 +15,7 @@
   <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
     <div>
       <h1>จัดการผู้ใช้งาน</h1>
-      <div class="subtitle">รายชื่อบัญชีผู้ใช้ทั้งหมดในระบบ เปลี่ยนบทบาท ปิด/เปิดใช้งาน และตั้งรหัสผ่านใหม่ได้จากหน้านี้</div>
+      <div class="subtitle" id="pageSubtitle">รายชื่อบัญชีผู้ใช้ทั้งหมดในระบบ เปลี่ยนบทบาท ปิด/เปิดใช้งาน และตั้งรหัสผ่านใหม่ได้จากหน้านี้</div>
     </div>
     <button class="btn btn-primary" id="newUserBtn">+ เพิ่มผู้ใช้งาน</button>
   </div>
@@ -45,8 +45,8 @@
       <div class="form-grid">
         <div class="form-row"><label>อีเมล</label><input type="email" id="u_email"></div>
         <div class="form-row"><label>เบอร์โทร</label><input type="text" id="u_phone"></div>
-        <div class="form-row"><label>บทบาท</label><select id="u_role" required></select></div>
-        <div class="form-row"><label>สำนักงาน</label><select id="u_office_id"></select></div>
+        <div class="form-row" id="u_role_row"><label>บทบาท</label><select id="u_role" required></select></div>
+        <div class="form-row" id="u_office_row"><label>สำนักงาน</label><select id="u_office_id"></select></div>
       </div>
       <div class="subtitle" id="u_surveyor_hint" style="display:none; margin:-8px 0 12px;">
         หมายเหตุ: ถ้าจะสร้างบัญชีสำหรับช่างรังวัด แนะนำให้ใช้หน้า "ช่างรังวัด" &rarr; "+ เพิ่มช่างรังวัด" แทน
@@ -59,6 +59,14 @@
       <div class="subtitle" id="u_branch_admin_hint" style="display:none; margin:-8px 0 12px;">
         หมายเหตุ: เจ้าพนักงานที่ดินสาขาจะเห็น/จัดการได้เฉพาะ "สำนักงาน" ที่เลือกไว้ด้านบนเท่านั้น (สาขาเดียว ไม่รวมสำนักงานอื่น
         แม้อยู่จังหวัดเดียวกัน) — เพิ่ม/แก้ไขบัญชีช่างรังวัดในสำนักงานนี้ได้จากหน้า "จัดการช่างรังวัด"
+      </div>
+      <div class="subtitle" id="u_branch_user_admin_hint" style="display:none; margin:-8px 0 12px;">
+        หมายเหตุ: ผู้ดูแลระดับสาขาจะเห็น/จัดการได้เฉพาะบัญชี "ช่างรังวัด" ที่อยู่ใน "สำนักงาน" ที่เลือกไว้ด้านบนเท่านั้น
+        (สาขาเดียว) ไม่มีสิทธิ์เกี่ยวข้องกับงานรังวัด/เคสใดๆ ในระบบเลย — ใช้จัดการบัญชีผู้ใช้ (สร้าง/แก้ไข/ตั้งรหัสผ่านใหม่)
+        ของช่างรังวัดในสาขานั้นเท่านั้น
+      </div>
+      <div class="subtitle" id="u_scoped_creator_hint" style="display:none; margin:-8px 0 12px;">
+        หมายเหตุ: ท่านจัดการได้เฉพาะบัญชี "ช่างรังวัด" ในสำนักงานของท่านเท่านั้น ระบบจะกำหนดบทบาทและสำนักงานให้อัตโนมัติ
       </div>
       <div class="form-row" id="u_active_row" style="display:none;">
         <label><input type="checkbox" id="u_is_active" style="width:auto; display:inline-block; margin-right:6px;"> ยังใช้งานอยู่ (ยกเลิกติ๊กเพื่อปิดใช้งาน — ผู้ใช้จะล็อกอินเข้าระบบไม่ได้ทันที)</label>
@@ -103,24 +111,37 @@
     { value: "administrator", label: "ผู้บริหาร" },
     { value: "province_admin", label: "ผู้ดูแลระดับจังหวัด" },
     { value: "branch_admin", label: "เจ้าพนักงานที่ดินสาขา" },
+    { value: "branch_user_admin", label: "ผู้ดูแลระดับสาขา" },
     { value: "supervisor", label: "หัวหน้าช่างรังวัด" },
     { value: "surveyor", label: "ช่างรังวัด" },
     { value: "citizen", label: "ประชาชน" },
   ];
 
+  // ผู้ดูแลระดับสาขา (branch_user_admin) เข้าหน้านี้ได้เหมือนกัน แต่ถูกจำกัดขอบเขตแคบมาก — จัดการได้เฉพาะบัญชี
+  // "ช่างรังวัด" ในสำนักงานตัวเองเท่านั้น (บังคับที่ backend เสมอ ดู blueprints/users.py) ฝั่งนี้แค่ซ่อนช่อง
+  // เลือกบทบาท/สำนักงานในฟอร์ม เพื่อไม่ให้สับสนว่าเลือกได้จริง (backend ก็ปฏิเสธ/ทับค่าที่ส่งมาอยู่ดีถ้าฝ่าฝืน)
+  let isScopedAdmin = false;
+
   async function init() {
     currentUser = await renderTopbar("users");
     if (!currentUser) return;
-    if (currentUser.role !== "system_admin") {
+    if (!["system_admin", "branch_user_admin"].includes(currentUser.role)) {
       document.querySelector(".container").innerHTML = "<div class='card'>หน้านี้ใช้ได้เฉพาะผู้ดูแลระบบ</div>";
       return;
+    }
+    isScopedAdmin = currentUser.role === "branch_user_admin";
+    if (isScopedAdmin) {
+      document.getElementById("pageSubtitle").textContent =
+        "รายชื่อบัญชีช่างรังวัดในสำนักงานของท่าน เพิ่ม/แก้ไข ปิด/เปิดใช้งาน และตั้งรหัสผ่านใหม่ได้จากหน้านี้";
+      document.getElementById("u_role_row").style.display = "none";
+      document.getElementById("u_office_row").style.display = "none";
     }
     offices = (await apiFetch("/offices")) || [];
     const officeSelect = document.getElementById("u_office_id");
     officeSelect.innerHTML = `<option value="">-- ไม่ระบุ --</option>` + offices.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
     const roleSelect = document.getElementById("u_role");
     roleSelect.innerHTML = ROLE_OPTIONS.map((r) => `<option value="${r.value}">${r.label}</option>`).join("");
-    document.getElementById("u_role").addEventListener("change", updateSurveyorHint);
+    if (!isScopedAdmin) document.getElementById("u_role").addEventListener("change", updateSurveyorHint);
     await loadUsers();
   }
 
@@ -129,6 +150,7 @@
     document.getElementById("u_surveyor_hint").style.display = !editingId && role === "surveyor" ? "block" : "none";
     document.getElementById("u_province_admin_hint").style.display = role === "province_admin" ? "block" : "none";
     document.getElementById("u_branch_admin_hint").style.display = role === "branch_admin" ? "block" : "none";
+    document.getElementById("u_branch_user_admin_hint").style.display = role === "branch_user_admin" ? "block" : "none";
   }
 
   async function loadUsers() {
@@ -166,11 +188,24 @@
 
   function openCreate() {
     editingId = null;
-    document.getElementById("userModalTitle").textContent = "เพิ่มผู้ใช้งาน";
+    document.getElementById("userModalTitle").textContent = isScopedAdmin ? "เพิ่มช่างรังวัด" : "เพิ่มผู้ใช้งาน";
     document.getElementById("createOnlyFields").style.display = "block";
     document.getElementById("u_active_row").style.display = "none";
     document.getElementById("userForm").reset();
-    updateSurveyorHint();
+    if (isScopedAdmin) {
+      // ล็อกบทบาท/สำนักงานไว้ล่วงหน้า (ช่องถูกซ่อนอยู่แล้ว — ดู init) เผื่อโค้ดส่วนอื่นอ่านค่าจากช่องนี้โดยตรง
+      // backend ก็บังคับค่าเดียวกันนี้ซ้ำอีกชั้นอยู่ดี (ดู blueprints/users.py) ไม่ได้พึ่งฝั่งนี้ฝั่งเดียว
+      document.getElementById("u_role").value = "surveyor";
+      document.getElementById("u_office_id").value = currentUser.office_id || "";
+      document.getElementById("u_surveyor_hint").style.display = "none";
+      document.getElementById("u_province_admin_hint").style.display = "none";
+      document.getElementById("u_branch_admin_hint").style.display = "none";
+      document.getElementById("u_branch_user_admin_hint").style.display = "none";
+      document.getElementById("u_scoped_creator_hint").style.display = "block";
+    } else {
+      document.getElementById("u_scoped_creator_hint").style.display = "none";
+      updateSurveyorHint();
+    }
     document.getElementById("userModal").style.display = "flex";
   }
 
@@ -192,6 +227,10 @@
     document.getElementById("u_role").disabled = isSelf;
     document.getElementById("u_self_hint").style.display = isSelf ? "block" : "none";
     document.getElementById("u_surveyor_hint").style.display = "none";
+    document.getElementById("u_province_admin_hint").style.display = "none";
+    document.getElementById("u_branch_admin_hint").style.display = "none";
+    document.getElementById("u_branch_user_admin_hint").style.display = "none";
+    document.getElementById("u_scoped_creator_hint").style.display = "none";
     document.getElementById("userModal").style.display = "flex";
   }
 

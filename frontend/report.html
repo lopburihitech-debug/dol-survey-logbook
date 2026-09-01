@@ -82,14 +82,30 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>รายการเรื่องรังวัด (<span id="caseCount">0</span> เรื่อง)</h2>
-      <div class="table-scroll">
-        <table>
-          <thead><tr id="caseTableHead"></tr></thead>
-          <tbody id="caseTableBody"><tr><td class="loading">กำลังโหลด...</td></tr></tbody>
-        </table>
+    <div class="card" id="officeChartCard" style="display:none;">
+      <h2>เปรียบเทียบตามสำนักงาน</h2>
+      <div id="officeChart"></div>
+    </div>
+
+    <div class="rank-grid">
+      <div class="card" style="margin-bottom:0;">
+        <h2>สัดส่วนสถานะงานทั้งหมด</h2>
+        <div id="statusDonut"><div class="loading">กำลังโหลด...</div></div>
       </div>
+      <div class="card" style="margin-bottom:0;">
+        <h2>ช่างรังวัดที่มีงานค้างมากที่สุด (10 อันดับ)</h2>
+        <div class="ranked-list" id="surveyorWorkloadList"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>สรุปแยกตามประเภทงาน</h2>
+      <div id="typeChart"><div class="loading">กำลังโหลด...</div></div>
+    </div>
+
+    <div class="card">
+      <h2>แนวโน้มจำนวนเรื่องรับเข้าใหม่รายเดือน (12 เดือนล่าสุด)</h2>
+      <div id="receivedTrendChart"><div class="loading">กำลังโหลด...</div></div>
     </div>
 
     <div class="signature-row">
@@ -106,8 +122,28 @@
 </div>
 
 <script src="/js/api.js"></script>
+<script src="/js/charts.js"></script>
 <script>
   requireAuth();
+
+  // สีของแต่ละสถานะให้ตรงกับสีตระกูลเดียวกับ badge สถานะที่ใช้ทั่วระบบ และตรงกับโดนัทสถานะในหน้า Dashboard
+  // (คัดลอกมาจาก dashboard.html — ไม่ย้ายไป charts.js ให้ใช้ร่วมกัน เพราะจะเป็นการเปลี่ยนไฟล์ที่หน้าอื่นพึ่งพาอยู่
+  // โดยไม่จำเป็น เสี่ยงกระทบ Dashboard โดยไม่ตั้งใจ)
+  const STATUS_CHART_COLORS = {
+    RECEIVED: "#0E6B45", WAITING_ASSIGNMENT: "#0E6B45",
+    ASSIGNED: "#8A5A00", APPOINTED: "#8A5A00", IN_SURVEY: "#8A5A00",
+    WAITING_DOCUMENT: "#6b21a8", WAITING_ANNOUNCEMENT: "#6b21a8", ON_HOLD: "#6b21a8", RE_APPOINTMENT_NEEDED: "#6b21a8",
+    PENDING_REVIEW: "#1d4ed8", PENDING_APPROVAL: "#1d4ed8", SURVEY_DONE: "#1d4ed8",
+    COMPLETED: "#1D8A4E", CLOSED: "#1D8A4E",
+    CANCELLED: "#B3261E", POSTPONED: "#B3261E", REWORK_REQUIRED: "#B3261E", SURVEY_SKIPPED: "#B3261E",
+  };
+
+  // ป้ายเดือนแบบย่อ (เช่น "ส.ค. 69") — รูปแบบเดียวกับที่ใช้ในหน้าโปรไฟล์ช่างรังวัด (surveyor-profile.html)
+  function shortMonthLabel(yearMonth) {
+    const d = new Date(yearMonth + "-01");
+    if (isNaN(d.getTime())) return yearMonth;
+    return d.toLocaleDateString("th-TH", { month: "short", year: "2-digit" });
+  }
 
   let ALL_CASES = [];
   let TYPE_MAP = {};
@@ -216,7 +252,11 @@
     const filtered = getFilteredCases();
     renderKpis(filtered);
     renderOfficeBreakdown(filtered);
-    renderCaseTable(filtered);
+    renderOfficeChart(filtered);
+    renderStatusDonut(filtered);
+    renderSurveyorWorkloadRanking(filtered);
+    renderTypeChart(filtered);
+    renderReceivedTrend(filtered);
   }
 
   function renderKpis(cases) {
@@ -259,32 +299,103 @@
         .join("") || `<tr><td colspan="6" class="empty-state">ไม่มีข้อมูล</td></tr>`;
   }
 
-  function renderCaseTable(cases) {
-    const showOfficeCol = SCOPE_OFFICES.length > 1;
-    const head = document.getElementById("caseTableHead");
-    head.innerHTML = `
-      <th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th>${showOfficeCol ? "<th>สำนักงาน</th>" : ""}
-      <th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>สถานะ</th>
-    `;
-    const sorted = [...cases].sort((a, b) => (b.received_date || "").localeCompare(a.received_date || ""));
-    document.getElementById("caseCount").textContent = sorted.length;
-    document.getElementById("caseTableBody").innerHTML = sorted.length
-      ? sorted
-          .map(
-            (c) => `
-        <tr>
-          <td>${c.case_code}</td>
-          <td>${c.requester_name}</td>
-          <td>${TYPE_MAP[c.survey_type_id] || "-"}</td>
-          ${showOfficeCol ? `<td>${(OFFICE_MAP[c.office_id] || {}).name || "-"}</td>` : ""}
-          <td>${c.assigned_surveyor ? c.assigned_surveyor.full_name : "-"}</td>
-          <td>${fmtDateOnly(c.received_date)}</td>
-          <td>${fmtDateOnly(c.appointment_date)}</td>
-          <td>${statusBadge(c.status)}</td>
-        </tr>`
-          )
-          .join("")
-      : `<tr><td colspan="${showOfficeCol ? 8 : 7}" class="empty-state">ไม่พบเรื่องตามตัวกรองที่เลือก</td></tr>`;
+  // กราฟแท่งเปรียบเทียบตามสำนักงาน (ภาพประกอบตารางสรุปแยกตามสำนักงานด้านบน) — แสดงเฉพาะเมื่อเห็นมากกว่า 1 สำนักงาน
+  // ตามขอบเขตสิทธิ์เดียวกับตาราง เพื่อไม่ให้ขึ้นกราฟแท่งเดียวโดดๆ ไม่มีอะไรให้เทียบ
+  function renderOfficeChart(cases) {
+    const card = document.getElementById("officeChartCard");
+    if (SCOPE_OFFICES.length <= 1) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "";
+    const rows = SCOPE_OFFICES.map((o) => {
+      const officeCases = cases.filter((c) => c.office_id === o.office_id);
+      const total = officeCases.length;
+      const pending = officeCases.filter((c) => !NAV_CLOSED_SET.has(c.status)).length;
+      return {
+        label: officeShortLabel(o.office_name),
+        sublabel: "จังหวัด" + o.province,
+        total_cases: total,
+        pending_cases: pending,
+        completed_cases: total - pending,
+      };
+    });
+    renderOfficeBarChart(document.getElementById("officeChart"), rows, { labelW: 175 });
+  }
+
+  // โดนัทสัดส่วนสถานะงานทั้งหมด — รูปแบบเดียวกับ Dashboard ผู้ดูแลระบบ ให้ผู้บริหารเห็นภาพรวมว่างานส่วนใหญ่ค้างอยู่
+  // ขั้นตอนไหนของกระบวนการ ไม่ใช่แค่ "ค้าง/เสร็จ" 2 กลุ่มใหญ่แบบการ์ด KPI ด้านบน
+  function renderStatusDonut(cases) {
+    const counts = {};
+    cases.forEach((c) => { counts[c.status] = (counts[c.status] || 0) + 1; });
+    const segments = Object.keys(counts).map((status) => ({
+      label: STATUS_LABELS[status] || status,
+      count: counts[status],
+      color: STATUS_CHART_COLORS[status] || "#94a3b8",
+    }));
+    renderDonutChart(document.getElementById("statusDonut"), segments);
+  }
+
+  // จัดอันดับช่างรังวัดที่มีงานค้าง (ยังไม่ปิด) มากที่สุด 10 อันดับแรก — ช่วยผู้บริหารเห็นภาระงานที่กระจายไม่เท่ากัน
+  // ระหว่างช่างแต่ละคนในขอบเขตที่กำลังดูอยู่ (คำนวณจาก assigned_surveyor ที่แนบมากับแต่ละเรื่องอยู่แล้ว ไม่ต้องยิง
+  // API เพิ่ม /surveyors เหมือนหน้า Dashboard เพราะหน้านี้ไม่ได้โหลดรายชื่อช่างทั้งหมดไว้)
+  function renderSurveyorWorkloadRanking(cases) {
+    const showOffice = SCOPE_OFFICES.length > 1;
+    const map = {};
+    cases
+      .filter((c) => c.assigned_surveyor && !NAV_CLOSED_SET.has(c.status))
+      .forEach((c) => {
+        const key = c.assigned_surveyor.surveyor_id;
+        if (!map[key]) {
+          map[key] = { label: c.assigned_surveyor.full_name, value: 0, officeName: (OFFICE_MAP[c.office_id] || {}).name };
+        }
+        map[key].value++;
+      });
+    const rows = Object.values(map)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10)
+      .map((r) => ({ label: r.label, value: r.value, sublabel: showOffice ? r.officeName : undefined }));
+    renderRankedBarList(document.getElementById("surveyorWorkloadList"), rows, { emptyText: "ไม่มีช่างที่มีงานค้าง" });
+  }
+
+  // กราฟแท่งสรุปแยกตามประเภทงาน (ทุกประเภทที่มีเรื่องอยู่ในขอบเขต/ตัวกรองปัจจุบัน) — บอกผู้บริหารว่างานค้างส่วนใหญ่
+  // เป็นงานประเภทไหน ต้องเสริมกำลังคนหรือทรัพยากรจุดไหนเป็นพิเศษ
+  function renderTypeChart(cases) {
+    const map = {};
+    cases.forEach((c) => {
+      const key = c.survey_type_id || "__none__";
+      if (!map[key]) map[key] = { total: 0, pending: 0 };
+      map[key].total++;
+      if (!NAV_CLOSED_SET.has(c.status)) map[key].pending++;
+    });
+    const rows = Object.keys(map).map((key) => ({
+      label: TYPE_MAP[key] || "ไม่ระบุประเภทงาน",
+      total_cases: map[key].total,
+      pending_cases: map[key].pending,
+      completed_cases: map[key].total - map[key].pending,
+    }));
+    renderOfficeBarChart(document.getElementById("typeChart"), rows, { labelW: 190 });
+  }
+
+  // แนวโน้มจำนวนเรื่องที่รับเข้าใหม่รายเดือน (12 เดือนล่าสุด อิงจากวันปัจจุบัน ไม่ใช่ตัวกรองวันที่ เพื่อให้เห็นแนวโน้ม
+  // ตามปฏิทินจริงเสมอ) — เติมเดือนที่ไม่มีเรื่องเลยเป็น 0 (dense) ไม่ข้ามไป กันกราฟดูเหมือนแนวโน้มต่อเนื่องผิดๆ
+  // รูปแบบข้อมูล/ป้ายกำกับเดือนแบบเดียวกับกราฟแนวโน้มในหน้าโปรไฟล์ช่างรังวัด (surveyor-profile.html)
+  function renderReceivedTrend(cases) {
+    const counts = {};
+    cases.forEach((c) => {
+      if (!c.received_date) return;
+      const ym = c.received_date.slice(0, 7);
+      counts[ym] = (counts[ym] || 0) + 1;
+    });
+    const months = [];
+    const cursor = new Date();
+    cursor.setDate(1);
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ label: shortMonthLabel(ym), count: counts[ym] || 0 });
+    }
+    renderMonthlyTrendChart(document.getElementById("receivedTrendChart"), months);
   }
 
   init();

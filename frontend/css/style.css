@@ -383,11 +383,34 @@ td { padding: 8px 10px; border-bottom: 1px solid #EDF2EF; }
 tr:hover td { background: var(--accent-light); }
 tr.clickable { cursor: pointer; }
 
+/* ตารางหลายคอลัมน์ (เช่น cases.html ที่มี 11 คอลัมน์) มักกว้างเกินการ์ด (.container กว้างสุด 1100px) แม้บนจอ
+   เดสก์ท็อปทั่วไป จึงต้องเลื่อนแนวนอนภายในกล่องนี้ (overflow-x) ปัญหาที่พบคือผู้ใช้จำนวนมากไม่รู้ว่าเลื่อนดูส่วนที่
+   เหลือได้ — เห็นแค่ขอบขวาของตารางถูกตัดพอดีกับกล่อง เข้าใจผิดว่าเนื้อหาหายไป/แสดงไม่ครบ (ไม่ใช่บั๊ก แค่ขาด
+   สัญญาณบอกว่าเลื่อนได้) แก้โดย (1) เงาไล่สีที่ขอบขวา/ซ้าย — เทคนิค CSS ล้วนๆ ไม่ต้องใช้ JavaScript (ใช้
+   background-attachment: local/scroll ผสมกัน) จะปรากฏเฉพาะตอนยังมีเนื้อหาให้เลื่อนดูอีกในทิศทางนั้นๆ เท่านั้น พอ
+   เลื่อนไปสุดขอบเงาจะหายไปเอง เป็นสัญญาณภาพที่คุ้นตาว่า "ยังมีต่อ เลื่อนดูได้" (2) scrollbar แสดงตลอดและมีสีเห็น
+   ชัดเจน แทนที่จะพึ่ง scrollbar ของแต่ละเบราว์เซอร์/OS ที่บางระบบซ่อนไว้จนกว่าจะเอาเมาส์ไปชี้ ทำให้มองไม่เห็นเลยว่า
+   เลื่อนได้ */
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   margin: 0 -1px;
+  position: relative;
+  background:
+    linear-gradient(to right, white 30%, rgba(255, 255, 255, 0)),
+    linear-gradient(to right, rgba(255, 255, 255, 0), white 70%) 100% 0,
+    linear-gradient(to right, rgba(15, 42, 30, 0.18), rgba(15, 42, 30, 0)),
+    linear-gradient(to left, rgba(15, 42, 30, 0.18), rgba(15, 42, 30, 0)) 100% 0;
+  background-repeat: no-repeat;
+  background-color: white;
+  background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+  background-attachment: local, local, scroll, scroll;
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) #E7EEE9;
 }
+.table-scroll::-webkit-scrollbar { height: 9px; }
+.table-scroll::-webkit-scrollbar-track { background: #E7EEE9; border-radius: 999px; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 999px; }
 @media (max-width: 700px) {
   .table-scroll table { min-width: 620px; }
 }
@@ -472,6 +495,8 @@ input:focus, select:focus, textarea:focus {
 .btn-success:hover { background: #146C3E; }
 .btn-danger { background: var(--danger); color: white; }
 .btn-sm { padding: 5px 10px; font-size: 12.5px; }
+.btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; }
+.btn-icon svg { width: 16px; height: 16px; flex-shrink: 0; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 
@@ -722,12 +747,39 @@ input:focus, select:focus, textarea:focus {
   max-width: 420px;
 }
 @media (max-width: 480px) { .backup-codes-grid { grid-template-columns: 1fr; } }
-/* ---- เช็คลิสต์ความคืบหน้าแบบเต็ม (ป้ายข้อความ) — ใช้ในตารางรายการงานรังวัด cases.html ---- */
-.checklist-full { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
-.checklist-full .badge { white-space: nowrap; }
-.checklist-full .cf-pos { background: #DCF3E4; color: var(--success); }
-.checklist-full .cf-neg { background: #FDEFD3; color: var(--warning); }
-.checklist-full .cf-unset { background: #DFE8E2; color: #445064; }
+/* ---- ตารางรายการงานรังวัด cases.html ---- */
+/* เซลล์ "เช็คลิสต์" สูงไม่เท่ากันทุกแถว (ป้ายข้อความยาวบางป้ายตัดขึ้นบรรทัดใหม่) ถ้าปล่อยตามค่าเริ่มต้นของเบราว์เซอร์
+   (vertical-align: middle) เนื้อหาเซลล์อื่นในแถวเดียวกัน (สถานะ/ความพึงพอใจ/จัดการ ซึ่งมีแค่บรรทัดเดียว) จะลอยขึ้นลง
+   กึ่งกลางแถวไม่ตรงกันระหว่างแถว ดูเบียดเบียน/ไม่เป็นระเบียบ — บังคับชิดขอบบนของเซลล์แทน ให้ทุกแถวเริ่มเนื้อหาที่
+   ระดับเดียวกันเสมอ ตั้งใจ scope เฉพาะตารางนี้ (ผ่าน .cases-table) ไม่ใช้กับตารางอื่นในระบบ เพราะบางตาราง (เช่น
+   surveyors.html) มีรูปโปรไฟล์วงกลมในเซลล์ที่ตั้งใจให้จัดกึ่งกลางแถวไว้อยู่แล้ว การเปลี่ยนที่นั่นจะดูแปลกไป */
+.cases-table td { vertical-align: top; }
+/* แถวไอคอนวงกลมของคอลัมน์ "เช็คลิสต์" — แทนป้ายข้อความเต็มแบบเดิม (ที่เคยเป็นคอลัมน์กว้างสุดในตาราง จนดันคอลัมน์
+   ขวาสุด "จัดการ" ถูกตัดครึ่งไปบางส่วน) ด้วยวงกลมไอคอนเล็กๆ 4 อัน กระชับและสวยงามขึ้นตามที่ผู้ใช้ระบบขอให้ออกแบบใหม่
+   (เขียว=เสร็จ/ครบ, แดง=ยังไม่เสร็จ/รอ — ใช้สีแดงแทนส้มเดิมตามที่ผู้ใช้ระบบขอ เพื่อให้เด่นชัดสะดุดตากว่า สีนี้ scope
+   เฉพาะไอคอนเช็คลิสต์ในคอลัมน์นี้เท่านั้น ไม่กระทบป้ายสถานะ .badge.status-* ที่ใช้สีส้ม/เหลืองทั่วระบบ, เทา=ยังไม่ระบุ)
+   รายละเอียดเต็มดูได้จาก tooltip เมื่อชี้เมาส์ค้าง (title) */
+.checklist-icons { display: flex; gap: 5px; align-items: center; }
+.ci-badge {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; cursor: default;
+}
+.ci-badge svg { width: 14px; height: 14px; }
+.ci-badge.ci-pos { background: #DCF3E4; color: var(--success); }
+.ci-badge.ci-neg { background: #FBE1DE; color: var(--danger); }
+.ci-badge.ci-unset { background: #DFE8E2; color: #445064; }
+
+/* แถบเครื่องมือเหนือตารางรายการงาน — แสดงจำนวนรายการทั้งหมด + ตัวเลือกจำนวนรายการต่อหน้า */
+.table-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); }
+.page-size-label { display: flex; align-items: center; gap: 6px; }
+.page-size-label select {
+  padding: 5px 8px; border: 1px solid #CBD5C9; border-radius: 7px;
+  font-size: 13px; font-family: inherit; background: white;
+}
+/* แถบเปลี่ยนหน้าใต้ตาราง — ซ่อนอัตโนมัติเมื่อมีหน้าเดียว (ดูฟังก์ชัน renderCasesPagination ใน cases.html) */
+.table-pagination { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 16px; font-size: 13.5px; color: var(--text-muted); }
+.table-pagination button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .backup-code-chip {
   font-family: "Courier New", monospace;
@@ -797,6 +849,14 @@ input:focus, select:focus, textarea:focus {
 .seg-btn.active.pos { background: var(--success); color: white; }
 .seg-btn.active.neg { background: var(--text-muted); color: white; }
 .seg-btn:disabled { cursor: default; }
+
+/* คลาสเสริม (ไม่กระทบ .checklist-grid เดิมที่ case.html ใช้) — บีบเป็น 4 คอลัมน์ในแนวนอนเดียว สำหรับแสดงเช็คลิสต์
+   แบบย่อในการ์ดรายการงาน (my-work.html) ที่มีการ์ดจำนวนมากต่อหน้า ไม่อยากให้แต่ละใบสูงเกินไป */
+.checklist-grid-compact { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.checklist-grid-compact .checklist-item { padding: 8px 10px; }
+.checklist-grid-compact .ci-label { font-size: 11.5px; margin-bottom: 6px; }
+.checklist-grid-compact .seg-btn { padding: 5px 6px; font-size: 11px; }
+@media (max-width: 780px) { .checklist-grid-compact { grid-template-columns: repeat(2, 1fr); } }
 
 /* รูปภาพประกอบข้อมูลแปลง — ใช้ thumbnail ขนาดกะทัดรัดคงที่ (ไม่ยืดเต็มคอลัมน์เหมือนเดิม) เพื่อไม่ให้เปลือง
    พื้นที่แนวตั้งเมื่อมีรูปจำนวนมาก (สูงสุด 10 รูป) — flex-wrap ทำให้จำนวนต่อแถวปรับตามความกว้างจอเองโดยไม่ต้อง

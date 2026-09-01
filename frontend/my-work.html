@@ -55,6 +55,15 @@
     "CLOSED", "CANCELLED",
   ];
 
+  // เช็คลิสต์ความคืบหน้าภาคสนาม — นิยามเดียวกับหน้ารายละเอียดเรื่อง (case.html CHECKLIST_DEFS) ให้ค่า/ป้ายตรงกันทั้ง
+  // ระบบ ใส่ไว้ในการ์ดรายการนี้ด้วยเพื่อให้ช่างรังวัดกาเช็คลิสต์ได้จากหน้ารายการเลย ไม่ต้องเปิดเข้าไปทีละเรื่อง
+  const CHECKLIST_DEFS = [
+    { key: "survey_result", label: "ผลการรังวัด", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "mapping_status", label: "ขึ้นรูป", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
+    { key: "neighbor_status", label: "ข้างเคียง", pos: "COMPLETE", posLabel: "ครบ", neg: "WAITING_AGENCY", negLabel: "รอส่วนราชการ" },
+    { key: "announcement_status", label: "ปิดประกาศ", pos: "POSTED", posLabel: "ปิดแล้ว", neg: "WAITING", negLabel: "รอปิด" },
+  ];
+
   let allCases = [];
   let typeMap = {};
   const filters = { search: "", typeId: "", status: "" };
@@ -206,9 +215,38 @@
             </div>
           </div>
           <div class="wc-appt">${apptLine}</div>
+          ${renderChecklistMini(c)}
         </div>`;
       })
       .join("");
+  }
+
+  // เช็คลิสต์ความคืบหน้าแบบย่อในการ์ด — กดปุ่มแล้วอัปเดตทันที (เรียก endpoint เดียวกับหน้ารายละเอียดเรื่อง) โดยไม่เปิด
+  // เข้าไปหน้า case.html เลย ต้อง stopPropagation ทุกปุ่มในนี้ เพราะทั้งการ์ดมี onclick พาไปหน้ารายละเอียดครอบอยู่
+  function renderChecklistMini(c) {
+    const items = CHECKLIST_DEFS.map((d) => {
+      const value = c[d.key];
+      return `
+        <div class="checklist-item">
+          <div class="ci-label">${d.label}</div>
+          <div class="segmented">
+            <button type="button" class="seg-btn pos ${value === d.pos ? "active" : ""}" onclick="event.stopPropagation(); toggleChecklist('${c.id}','${d.key}','${d.pos}')">${d.posLabel}</button>
+            <button type="button" class="seg-btn neg ${value === d.neg ? "active" : ""}" onclick="event.stopPropagation(); toggleChecklist('${c.id}','${d.key}','${d.neg}')">${d.negLabel}</button>
+          </div>
+        </div>`;
+    }).join("");
+    return `<div class="checklist-grid checklist-grid-compact" style="margin-top:12px; padding-top:12px; border-top:1px solid #EDF2EF;">${items}</div>`;
+  }
+
+  async function toggleChecklist(caseId, key, value) {
+    try {
+      await apiFetch("/survey-cases/" + caseId + "/checklist", { method: "PATCH", body: JSON.stringify({ [key]: value }) });
+      const c = allCases.find((x) => x.id === caseId);
+      if (c) c[key] = value;
+      renderFilteredList();
+    } catch (err) {
+      alert(err.message);
+    }
   }
 
   init();

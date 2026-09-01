@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import shutil
 import sqlite3
 from datetime import datetime
@@ -23,8 +24,10 @@ from security import login_required, require_roles
 from services.audit import log_action
 from services.case_code import generate_case_code
 from services.gmaps_link import extract_coords_from_maps_url
+from services.rw71_import import parse_rw71_rows
 from services.sla import add_business_days
 from services.thai_date import parse_flexible_date
+from services.xlsx_reader import XlsxParseError
 
 bp = Blueprint("survey_cases", __name__, url_prefix="/api/v1/survey-cases")
 
@@ -267,6 +270,69 @@ def _decode_csv_bytes(raw: bytes) -> str:
     raise ValueError("อ่านไฟล์ไม่ได้ กรุณาบันทึกไฟล์เป็น CSV UTF-8 แล้วลองใหม่")
 
 
+def _bulk_insert_parsed_cases(conn, parsed: list, office_id: str, surveyor_id, created_by: str) -> list:
+    """บันทึกรายการเรื่อง (ที่ตรวจสอบผ่านแล้ว — pass 1) ลงฐานข้อมูลจริงเป็นก้อนเดียว (pass 2) — ใช้ร่วมกันทั้ง
+    import_cases() (นำเข้าจาก CSV เทมเพลต) และ import_rw71_cases() (นำเข้าจากไฟล์รายงานรูปแบบเดิม) เพื่อให้พฤติกรรม
+    การคำนวณ due_date/สถานะเริ่มต้น/ประวัติสถานะ เหมือนกันเป๊ะทั้งสองทาง ไม่ต้องดูแลโค้ดซ้ำสองที่
+    parsed: [{case_code, requester_name, requester_contact, survey_type_id, received_date, appointment_date, target_status}, ...]
+    คืนค่า list ของ case_code ที่นำเข้าสำเร็จ (ไม่ commit ให้ — ผู้เรียกเป็นคน commit + log_action เอง)"""
+    # ต้องใช้ target_days จริงของแต่ละประเภทงานตอนคำนวณ due_date — ดึงแยกเป็น map เพราะ query ด้านบนเลือกแค่ id/name
+    target_days_map = {
+        t["id"]: t["target_days"]
+        for t in conn.execute("SELECT id, target_days FROM survey_types WHERE is_active = 1").fetchall()
+    }
+
+    imported_codes = []
+    ts = now_iso()
+    for item in parsed:
+        case_id = new_id()
+        received_dt = datetime.fromisoformat(item["received_date"])
+        due_date = add_business_days(conn, received_dt, target_days_map.get(item["survey_type_id"], 30))
+        conn.execute(
+            """INSERT INTO survey_cases (id, case_code, office_id, survey_type_id, requester_name, requester_contact,
+                                          received_date, due_date, appointment_date, status, priority, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'normal', ?, ?, ?)""",
+            (
+                case_id,
+                item["case_code"],
+                office_id,
+                item["survey_type_id"],
+                item["requester_name"],
+                item["requester_contact"],
+                received_dt.isoformat(),
+                due_date.isoformat(),
+                item["appointment_date"],
+                CaseStatus.RECEIVED,
+                created_by,
+                ts,
+                ts,
+            ),
+        )
+        conn.execute(
+            """INSERT INTO case_status_history (id, case_id, previous_status, new_status, changed_by, reason, changed_at)
+               VALUES (?, ?, NULL, ?, ?, ?, ?)""",
+            (new_id(), case_id, CaseStatus.RECEIVED, created_by, "นำเข้าข้อมูลเดิม", ts),
+        )
+
+        current_status = CaseStatus.RECEIVED
+        if surveyor_id:
+            conn.execute(
+                """INSERT INTO case_assignments (id, case_id, surveyor_id, assigned_by, assigned_at, is_active)
+                   VALUES (?, ?, ?, ?, ?, 1)""",
+                (new_id(), case_id, surveyor_id, created_by, ts),
+            )
+            if item["target_status"] != CaseStatus.RECEIVED:
+                record_status_change(conn, case_id, current_status, CaseStatus.ASSIGNED, created_by, "นำเข้าข้อมูลเดิม")
+                current_status = CaseStatus.ASSIGNED
+
+        if item["target_status"] != current_status:
+            record_status_change(conn, case_id, current_status, item["target_status"], created_by, "นำเข้าข้อมูลเดิม")
+
+        imported_codes.append(item["case_code"])
+
+    return imported_codes
+
+
 @bp.post("/import")
 @login_required
 @require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN)
@@ -383,59 +449,7 @@ def import_cases():
         if not parsed:
             return ok({"imported": 0, "skipped": skipped})
 
-        # ต้องใช้ target_days จริงของแต่ละประเภทงานตอนคำนวณ due_date — ดึงแยกเป็น map เพราะ query ด้านบนเลือกแค่ id/name
-        target_days_map = {
-            t["id"]: t["target_days"]
-            for t in conn.execute("SELECT id, target_days FROM survey_types WHERE is_active = 1").fetchall()
-        }
-
-        imported_codes = []
-        ts = now_iso()
-        for item in parsed:
-            case_id = new_id()
-            received_dt = datetime.fromisoformat(item["received_date"])
-            due_date = add_business_days(conn, received_dt, target_days_map.get(item["survey_type_id"], 30))
-            conn.execute(
-                """INSERT INTO survey_cases (id, case_code, office_id, survey_type_id, requester_name, requester_contact,
-                                              received_date, due_date, appointment_date, status, priority, created_by, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'normal', ?, ?, ?)""",
-                (
-                    case_id,
-                    item["case_code"],
-                    office_id,
-                    item["survey_type_id"],
-                    item["requester_name"],
-                    item["requester_contact"],
-                    received_dt.isoformat(),
-                    due_date.isoformat(),
-                    item["appointment_date"],
-                    CaseStatus.RECEIVED,
-                    g.current_user["id"],
-                    ts,
-                    ts,
-                ),
-            )
-            conn.execute(
-                """INSERT INTO case_status_history (id, case_id, previous_status, new_status, changed_by, reason, changed_at)
-                   VALUES (?, ?, NULL, ?, ?, ?, ?)""",
-                (new_id(), case_id, CaseStatus.RECEIVED, g.current_user["id"], "นำเข้าข้อมูลเดิม", ts),
-            )
-
-            current_status = CaseStatus.RECEIVED
-            if surveyor_id:
-                conn.execute(
-                    """INSERT INTO case_assignments (id, case_id, surveyor_id, assigned_by, assigned_at, is_active)
-                       VALUES (?, ?, ?, ?, ?, 1)""",
-                    (new_id(), case_id, surveyor_id, g.current_user["id"], ts),
-                )
-                if item["target_status"] != CaseStatus.RECEIVED:
-                    record_status_change(conn, case_id, current_status, CaseStatus.ASSIGNED, g.current_user["id"], "นำเข้าข้อมูลเดิม")
-                    current_status = CaseStatus.ASSIGNED
-
-            if item["target_status"] != current_status:
-                record_status_change(conn, case_id, current_status, item["target_status"], g.current_user["id"], "นำเข้าข้อมูลเดิม")
-
-            imported_codes.append(item["case_code"])
+        imported_codes = _bulk_insert_parsed_cases(conn, parsed, office_id, surveyor_id, g.current_user["id"])
 
         conn.commit()
         log_action(
@@ -445,6 +459,173 @@ def import_cases():
             "survey_cases",
             None,
             after={"office_id": office_id, "surveyor_id": surveyor_id, "imported_count": len(imported_codes)},
+        )
+
+        return ok({"imported": len(imported_codes), "imported_codes": imported_codes, "skipped": skipped}, 201)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# นำเข้างานค้างจากไฟล์รายงานรูปแบบเดิม (เช่น "รว.71") — ต่างจาก /import ด้านบนตรงที่ไม่ต้องให้ผู้ใช้จัดหัวตาราง/
+# คอลัมน์ใหม่ก่อน อัปโหลดไฟล์ .xlsx ที่ export มาจากระบบเดิมได้ตรงๆ (ดู services/rw71_import.py สำหรับการแกะโครงสร้าง
+# ไฟล์ที่มีหัวตารางซ้ำหลายบล็อก) — แบ่งเป็น 2 ขั้นตอนเพราะคอลัมน์ "ประเภท" ในไฟล์เดิมเป็นข้อความอิสระที่อาจไม่ตรงกับ
+# ชื่อประเภทงานในระบบนี้เป๊ะๆ ต้องให้ผู้ใช้ยืนยันการจับคู่ก่อนนำเข้าจริง:
+#   1) /import-rw71/preview — อ่านไฟล์แล้วคืนรายชื่อ "ประเภท" ที่พบทั้งหมดในไฟล์ (ไม่บันทึกอะไรลงฐานข้อมูล)
+#   2) /import-rw71        — รับไฟล์เดิมซ้ำ + การจับคู่ประเภทงานที่ผู้ใช้ยืนยันแล้ว มาบันทึกจริง
+# ---------------------------------------------------------------------------
+@bp.post("/import-rw71/preview")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN)
+def preview_import_rw71():
+    """อ่านไฟล์รายงานรูปแบบเดิม แล้วสรุปจำนวนแถวข้อมูลที่พบ + รายชื่อ "ประเภทงาน" ทุกแบบที่เจอในไฟล์ (พร้อมจำนวนแถว
+    ของแต่ละแบบ) ให้หน้าเว็บแสดงเป็นขั้นตอน "จับคู่ประเภทงาน" ก่อนนำเข้าจริง — ไม่มีการบันทึกข้อมูลใดๆ ในขั้นตอนนี้"""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return err("ต้องแนบไฟล์ Excel (field name: file)")
+
+    try:
+        rows = parse_rw71_rows(file.stream.read())
+    except XlsxParseError as exc:
+        return err(str(exc))
+
+    conn = get_connection()
+    try:
+        survey_type_rows = conn.execute("SELECT id, name FROM survey_types WHERE is_active = 1").fetchall()
+        survey_type_by_name = {t["name"].strip(): t["id"] for t in survey_type_rows}
+
+        counts = {}
+        for r in rows:
+            counts[r["type_text"]] = counts.get(r["type_text"], 0) + 1
+
+        types = [
+            {
+                "raw_text": text,
+                "count": count,
+                "suggested_survey_type_id": survey_type_by_name.get(text.strip()),
+            }
+            for text, count in counts.items()
+        ]
+        types.sort(key=lambda t: (-t["count"], t["raw_text"]))
+
+        return ok({"row_count": len(rows), "types": types})
+    finally:
+        conn.close()
+
+
+@bp.post("/import-rw71")
+@login_required
+@require_roles(Role.SYSTEM_ADMIN, Role.ADMINISTRATOR, Role.PROVINCE_ADMIN)
+def import_rw71_cases():
+    """นำเข้าจริงจากไฟล์รายงานรูปแบบเดิม (ไฟล์เดียวกับที่ส่งเข้า preview) + การจับคู่ "ประเภทงาน" ที่ผู้ใช้ยืนยันแล้ว
+    — ตรวจสอบทุกแถวก่อน (pass 1) แล้วค่อยบันทึกจริงเป็นก้อนเดียว (pass 2) เหมือน import_cases() ด้านบนทุกประการ
+    (ใช้ _bulk_insert_parsed_cases() ร่วมกัน) ต่างกันแค่แหล่งข้อมูลอ่านจากไฟล์ .xlsx รูปแบบเดิมแทน CSV เทมเพลต"""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return err("ต้องแนบไฟล์ Excel (field name: file)")
+
+    office_id = (request.form.get("office_id") or "").strip()
+    surveyor_id = (request.form.get("surveyor_id") or "").strip() or None
+    if not office_id:
+        return err("ต้องระบุสำนักงาน")
+
+    try:
+        type_mapping = json.loads(request.form.get("type_mapping") or "{}")
+        if not isinstance(type_mapping, dict):
+            raise ValueError
+    except ValueError:
+        return err("ข้อมูลการจับคู่ประเภทงาน (type_mapping) ไม่ถูกต้อง")
+
+    try:
+        rows = parse_rw71_rows(file.stream.read())
+    except XlsxParseError as exc:
+        return err(str(exc))
+
+    conn = get_connection()
+    try:
+        if conn.execute("SELECT 1 FROM offices WHERE id = ?", (office_id,)).fetchone() is None:
+            return err("ไม่พบสำนักงานที่ระบุ", 404)
+        if not is_office_in_user_scope(conn, g.current_user, office_id):
+            return err("สำนักงานที่ระบุอยู่นอกเขตจังหวัดที่ท่านดูแล", 403)
+        if surveyor_id and conn.execute("SELECT 1 FROM surveyors WHERE id = ?", (surveyor_id,)).fetchone() is None:
+            return err("ไม่พบข้อมูลช่างรังวัดที่ระบุ", 404)
+
+        valid_type_ids = {t["id"] for t in conn.execute("SELECT id FROM survey_types WHERE is_active = 1").fetchall()}
+
+        skipped = []
+        parsed = []
+        seen_codes = set()
+
+        for r in rows:
+            case_code = r["case_code"]
+            if not case_code:
+                skipped.append({"row": r["row_no"], "reason": "ไม่มีเลข รว.12 (คอลัมน์ 'เลขที่')"})
+                continue
+            if case_code in seen_codes:
+                skipped.append({"row": r["row_no"], "case_code": case_code, "reason": "เลข รว.12 นี้ซ้ำกันในไฟล์เดียวกัน"})
+                continue
+            if conn.execute(
+                "SELECT 1 FROM survey_cases WHERE case_code = ? AND office_id = ?", (case_code, office_id)
+            ).fetchone():
+                skipped.append({"row": r["row_no"], "case_code": case_code, "reason": "เลข รว.12 นี้มีอยู่ในระบบแล้วสำหรับสำนักงานนี้"})
+                continue
+
+            if not r["requester_name"]:
+                skipped.append({"row": r["row_no"], "case_code": case_code, "reason": "ไม่มีชื่อผู้ขอรังวัด"})
+                continue
+
+            survey_type_id = type_mapping.get(r["type_text"])
+            if not survey_type_id or survey_type_id not in valid_type_ids:
+                skipped.append(
+                    {
+                        "row": r["row_no"],
+                        "case_code": case_code,
+                        "reason": f"ยังไม่ได้จับคู่ประเภทงาน '{r['type_text']}' กับประเภทงานในระบบ (ข้ามในขั้นตอนจับคู่ประเภทงาน)",
+                    }
+                )
+                continue
+
+            try:
+                appointment_date = parse_flexible_date(r["appointment_date_raw"])
+            except ValueError as exc:
+                skipped.append({"row": r["row_no"], "case_code": case_code, "reason": str(exc)})
+                continue
+            if not appointment_date:
+                skipped.append({"row": r["row_no"], "case_code": case_code, "reason": "ไม่มีวันนัดรังวัด (คอลัมน์ 'นัดรังวัด')"})
+                continue
+
+            # ไฟล์รูปแบบนี้ไม่มีคอลัมน์ "วันที่รับเรื่อง" แยกต่างหาก — ใช้วันนัดรังวัดแทนเหมือนพฤติกรรมของ /import (CSV)
+            # เมื่อไม่ได้ระบุวันที่รับเรื่องมาด้วย และไม่มีคอลัมน์ "สถานะเริ่มต้น" ในไฟล์นี้เลย จึงให้ระบบเลือกสถานะ
+            # ที่เหมาะสมให้อัตโนมัติเสมอ (กติกาเดียวกับ /import ตอนเว้นคอลัมน์ "สถานะเริ่มต้น" ว่างไว้)
+            received_date = appointment_date
+            target_status = CaseStatus.APPOINTED if surveyor_id else CaseStatus.WAITING_ASSIGNMENT
+
+            seen_codes.add(case_code)
+            parsed.append(
+                {
+                    "case_code": case_code,
+                    "requester_name": r["requester_name"],
+                    "requester_contact": None,
+                    "survey_type_id": survey_type_id,
+                    "received_date": received_date,
+                    "appointment_date": appointment_date,
+                    "target_status": target_status,
+                }
+            )
+
+        if not parsed:
+            return ok({"imported": 0, "skipped": skipped})
+
+        imported_codes = _bulk_insert_parsed_cases(conn, parsed, office_id, surveyor_id, g.current_user["id"])
+
+        conn.commit()
+        log_action(
+            conn,
+            g.current_user["id"],
+            "IMPORT",
+            "survey_cases",
+            None,
+            after={"office_id": office_id, "surveyor_id": surveyor_id, "imported_count": len(imported_codes), "source": "rw71_xlsx"},
         )
 
         return ok({"imported": len(imported_codes), "imported_codes": imported_codes, "skipped": skipped}, 201)
@@ -675,14 +856,27 @@ def upsert_parcel(case_id):
         # จากลิงก์ให้อัตโนมัติ (ดู services/gmaps_link.py) เพื่อให้เรื่องนี้ไปปรากฏบนหน้าแผนที่ช่างรังวัด
         # (field-map.html) ได้โดยไม่ต้องพึ่ง Shapefile — ทำเฉพาะตอนลิงก์เปลี่ยนไปจากเดิมจริงๆ หรือยังไม่เคยดึงพิกัด
         # ได้เลย (กันการยิง request ไปข้างนอกซ้ำโดยไม่จำเป็นทุกครั้งที่บันทึกฟอร์มนี้ทั้งที่ลิงก์เดิม)
+        #
+        # แก้บั๊กที่พบจริง (ผู้ใช้แจ้ง): เปลี่ยนลิงก์แผนที่แล้ว แต่ระบบยังโชว์พิกัดเดิม (ของลิงก์ก่อนหน้า) เหมือนดึงจาก
+        # ลิงก์ใหม่สำเร็จ — เดิมโค้ดนี้จะพยายามดึงพิกัดใหม่ก็จริง แต่ถ้าดึงไม่สำเร็จ (เช่น เป็นลิงก์แบบย่อที่ต้องต่อ
+        # อินเทอร์เน็ตออกไปหา Google แล้วเครือข่ายเซิร์ฟเวอร์เข้าไม่ถึง/ถูกบล็อก) จะไม่ทำอะไรกับ payload เลย ปล่อยให้
+        # lat/lng แถวเดิมในฐานข้อมูล (ของลิงก์ก่อนหน้า) ค้างอยู่เฉยๆ — หน้ารายละเอียดเรื่องเลยอ่านพิกัดเก่านั้นมาโชว์
+        # เป็น "ดึงพิกัดจากลิงก์แล้ว" ทั้งที่จริงเป็นพิกัดของลิงก์อื่นที่ไม่ใช่ลิงก์ปัจจุบันแล้ว ต้องล้าง lat/lng ทิ้งให้
+        # ชัดเจนทุกครั้งที่ลิงก์เปลี่ยนแล้วดึงไม่สำเร็จ (ให้ผู้ใช้เห็นสถานะ "ยังดึงพิกัดจากลิงก์นี้อัตโนมัติไม่ได้"
+        # ตรงไปตรงมาแทน) รวมถึงตอนผู้ใช้ลบลิงก์ออกทั้งหมดด้วย (ไม่มีลิงก์อ้างอิงแล้ว พิกัดเดิมก็ไม่ควรค้างอยู่)
         location_url = payload.get("location_url")
-        if location_url and "lat" not in payload and "lng" not in payload:
+        if "lat" not in payload and "lng" not in payload:
             existing_url = existing["location_url"] if existing else None
-            existing_lat = existing["lat"] if existing else None
-            if location_url != existing_url or existing_lat is None:
-                derived_lat, derived_lng = extract_coords_from_maps_url(location_url)
-                if derived_lat is not None:
-                    payload = {**payload, "lat": derived_lat, "lng": derived_lng}
+            if location_url:
+                existing_lat = existing["lat"] if existing else None
+                if location_url != existing_url or existing_lat is None:
+                    derived_lat, derived_lng = extract_coords_from_maps_url(location_url)
+                    if derived_lat is not None:
+                        payload = {**payload, "lat": derived_lat, "lng": derived_lng}
+                    elif location_url != existing_url:
+                        payload = {**payload, "lat": None, "lng": None}
+            elif "location_url" in payload and existing_url:
+                payload = {**payload, "lat": None, "lng": None}
 
         if existing is None:
             values = [payload.get(f) for f in PARCEL_FIELDS]
@@ -707,9 +901,10 @@ def upsert_parcel(case_id):
 
 
 # จำกัดจำนวนแปลงที่ประมวลผลต่อคำขอ — backend/entrypoint.sh ตั้ง gunicorn --timeout 60 วินาที และการตามลิงก์แบบย่อ
-# (maps.app.goo.gl) ไปดู URL ปลายทางจริงแต่ละอันอาจใช้เวลาได้ถึง ~4 วินาที (ดู services/gmaps_link.py) ถ้าประมวลผล
-# ทีเดียวหมดในคำขอเดียวอาจทำให้ worker ถูกฆ่าก่อนตอบกลับ จึงให้ฝั่ง frontend เรียกซ้ำเป็นชุดๆ จนกว่าจะครบแทน
-_BACKFILL_BATCH_SIZE = 15
+# (maps.app.goo.gl) ไปดู URL ปลายทางจริงแต่ละอันอาจใช้เวลาได้ถึง ~6 วินาที (ดู services/gmaps_link.py) ถ้าประมวลผล
+# ทีเดียวหมดในคำขอเดียวอาจทำให้ worker ถูกฆ่าก่อนตอบกลับ จึงให้ฝั่ง frontend เรียกซ้ำเป็นชุดๆ จนกว่าจะครบแทน — ลดจาก
+# เดิม 15 เหลือ 8 ตอนปรับ timeout เป็น 6 วินาที (8*6=48s ยังเหลือระยะห่างพอสมควรก่อนถึง 60s ของ gunicorn)
+_BACKFILL_BATCH_SIZE = 8
 
 
 @bp.post("/parcels/backfill-coords")

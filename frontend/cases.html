@@ -36,14 +36,27 @@
       <button class="btn btn-outline btn-sm" onclick="loadCases()">ค้นหา</button>
       <button class="btn btn-outline btn-sm" onclick="clearFilters()">ล้างตัวกรอง</button>
     </div>
+    <div class="table-toolbar">
+      <span id="casesTotalCount"></span>
+      <label class="page-size-label">แสดง
+        <select id="pageSizeSelect" onchange="changeCasesPageSize(this.value)">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        รายการต่อหน้า
+      </label>
+    </div>
     <div class="table-scroll">
-    <table>
+    <table class="cases-table">
       <thead>
         <tr><th>รว.12</th><th>ผู้ขอ</th><th>ประเภทงาน</th><th>ช่างรับผิดชอบ</th><th>วันรับเรื่อง</th><th>วันนัดรังวัด</th><th>เกินนัดรังวัด</th><th>เช็คลิสต์</th><th>สถานะ</th><th>ความพึงพอใจ</th><th id="manageColHeader" style="display:none;">จัดการ</th></tr>
       </thead>
       <tbody id="casesBody"><tr><td colspan="10" class="loading">กำลังโหลด...</td></tr></tbody>
     </table>
     </div>
+    <div class="table-pagination" id="casesPagination"></div>
   </div>
 </div>
 
@@ -203,8 +216,9 @@
   }
 
   // ตัวกรอง "ช่างรังวัด" ในหน้ารายการ — ไม่ส่ง office_id เพื่อให้ backend กำหนดขอบเขตเองตามสิทธิ์ผู้ใช้
-  // (system_admin/administrator เห็นทุกสำนักงาน ส่วนบทบาทอื่นเห็นเฉพาะสำนักงานตนอยู่แล้ว) ต่างจาก
-  // loadSurveyorsForAssign ที่ใช้กับ modal สร้างเรื่องใหม่ ซึ่งต้องระบุ office_id ของเรื่องที่กำลังสร้าง
+  // (system_admin/administrator เห็นทุกสำนักงาน, province_admin เห็นทุกสำนักงานในจังหวัดตน, บทบาทอื่นเห็นเฉพาะ
+  // สำนักงานตน — ตรรกะนี้อยู่ใน _scope_office() ฝั่ง backend/blueprints/surveyors.py) ใช้วิธีเดียวกับ
+  // loadSurveyorsForAssign ด้านล่างนี้
   async function loadSurveyorsForFilter() {
     const surveyors = (await apiFetch("/surveyors")) || [];
     const select = document.getElementById("surveyorFilter");
@@ -218,8 +232,13 @@
         .join("");
   }
 
+  // ตัวเลือก "ช่างรังวัดที่รับผิดชอบ" ในฟอร์มรับเรื่อง รว.12 ใหม่ — เดิมจำกัดเฉพาะสำนักงานของผู้ใช้ที่ล็อกอินอยู่
+  // (office_id=officeId) ทำให้เห็นช่างไม่ครบ ตอนนี้ไม่ส่ง office_id แล้ว ให้ backend กำหนดขอบเขตเองตามสิทธิ์ผู้ใช้
+  // แบบเดียวกับ loadSurveyorsForFilter ด้านบน (system_admin/administrator เห็นทุกสำนักงาน, province_admin เห็นทุก
+  // สำนักงานในจังหวัดตนเท่านั้น ไม่ใช่ทุกจังหวัด) ตามที่ผู้ใช้ระบบขอ — การเลือกช่างจากสำนักงานอื่นในจังหวัดเดียวกันมา
+  // รับผิดชอบเรื่องได้ ไม่ขัดกับ backend เพราะ create_case() ไม่ได้บังคับว่า surveyor ต้องอยู่สำนักงานเดียวกับเรื่องอยู่แล้ว
   async function loadSurveyorsForAssign() {
-    const surveyors = (await apiFetch("/surveyors" + (officeId ? "?office_id=" + officeId : ""))) || [];
+    const surveyors = (await apiFetch("/surveyors")) || [];
     const select = document.getElementById("assignSurveyorId");
     select.innerHTML =
       `<option value="">-- ยังไม่มอบหมาย --</option>` +
@@ -363,8 +382,10 @@
     return "-";
   }
 
-  // เช็คลิสต์ความคืบหน้า 4 รายการ (ตรงกับ CHECKLIST_DEFS ในหน้ารายละเอียดงาน case.html) — แสดงเป็นป้ายข้อความเต็ม
-  // ในตารางรายการ เพื่อให้เห็นความคืบหน้าของแต่ละเรื่องได้ชัดเจนโดยไม่ต้องเปิดเข้าไปดูทีละเรื่อง
+  // เช็คลิสต์ความคืบหน้า 4 รายการ (ตรงกับ CHECKLIST_DEFS ในหน้ารายละเอียดงาน case.html) — แสดงเป็นวงกลมไอคอน
+  // สีตามสถานะในตารางรายการ (แทนป้ายข้อความเต็มแบบเดิมที่กินพื้นที่มาก) เพื่อให้เห็นความคืบหน้าของแต่ละเรื่องได้
+  // ในทันทีโดยไม่ต้องเปิดเข้าไปดูทีละเรื่อง — ชี้เมาส์ค้างที่ไอคอนเพื่อดูรายละเอียดเต็มผ่าน title (ตามที่ผู้ใช้ระบบ
+  // ขอให้ออกแบบใหม่ให้กระชับและสวยงามขึ้น)
   const CHECKLIST_DEFS = [
     { key: "survey_result", label: "ผลการรังวัด", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
     { key: "mapping_status", label: "ขึ้นรูป", pos: "DONE", posLabel: "เสร็จ", neg: "NOT_DONE", negLabel: "ไม่เสร็จ" },
@@ -372,14 +393,25 @@
     { key: "announcement_status", label: "ปิดประกาศ", pos: "POSTED", posLabel: "ปิดแล้ว", neg: "WAITING", negLabel: "รอปิด" },
   ];
 
-  function checklistFull(c) {
-    return `<div class="checklist-full">` + CHECKLIST_DEFS.map((d) => {
+  // ไอคอนเส้น (stroke=currentColor) วาดเองในสไตล์เดียวกับ NAV_ICONS ใน js/api.js — หนึ่งไอคอนต่อหนึ่งรายการเช็คลิสต์
+  // เพื่อให้สแกนดูด้วยสายตาได้เร็วว่าเป็นเรื่องอะไร: ผลการรังวัด=สัญลักษณ์วัดระยะ, ขึ้นรูป=แผนที่, ข้างเคียง=เพื่อนบ้าน,
+  // ปิดประกาศ=ธง
+  const CHECKLIST_ICONS = {
+    survey_result: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17 17 3l4 4L7 21H3v-4Z"/><path d="M13 3l2 2M9 7l2 2M5 11l2 2"/></svg>`,
+    mapping_status: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z"/><path d="M9 3v16M15 5v16"/></svg>`,
+    neighbor_status: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 2.7-5 6-5s6 2 6 5M11 20c0-3 2.2-5 5-5s5 2 5 5"/></svg>`,
+    announcement_status: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18"/><path d="M5 4h13l-3 4 3 4H5Z"/></svg>`,
+  };
+
+  function checklistIcons(c) {
+    return `<div class="checklist-icons">` + CHECKLIST_DEFS.map((d) => {
       const value = c[d.key];
-      let cls = "cf-unset";
+      let cls = "ci-unset";
       let stateLabel = "ยังไม่ระบุ";
-      if (value === d.pos) { cls = "cf-pos"; stateLabel = d.posLabel; }
-      else if (value === d.neg) { cls = "cf-neg"; stateLabel = d.negLabel; }
-      return `<span class="badge ${cls}">${d.label}: ${stateLabel}</span>`;
+      if (value === d.pos) { cls = "ci-pos"; stateLabel = d.posLabel; }
+      else if (value === d.neg) { cls = "ci-neg"; stateLabel = d.negLabel; }
+      const title = `${d.label}: ${stateLabel}`.replace(/"/g, "&quot;");
+      return `<span class="ci-badge ${cls}" title="${title}">${CHECKLIST_ICONS[d.key]}</span>`;
     }).join("") + `</div>`;
   }
 
@@ -414,6 +446,13 @@
     loadCases();
   }
 
+  // แบ่งหน้ารายการฝั่งหน้าเว็บ (client-side) — API /survey-cases คืนข้อมูลที่ตรงตัวกรองมาทั้งหมดในครั้งเดียวอยู่แล้ว
+  // (ไม่มี limit/offset ฝั่ง backend) จึงเก็บผลลัพธ์ทั้งหมดไว้ใน allCases แล้วตัดเฉพาะหน้าที่กำลังดูมาแสดง วิธีนี้
+  // ไม่ต้องแก้ backend เลย ปลอดภัยกับหน้าอื่นๆ ของระบบที่เรียก API เดียวกัน (เช่น calendar.html, my-work.html)
+  let allCases = [];
+  let casesPage = 1;
+  let casesPageSize = 20;
+
   async function loadCases() {
     const params = new URLSearchParams();
     const search = document.getElementById("searchInput").value.trim();
@@ -426,17 +465,33 @@
     if (surveyorId) params.set("surveyor_id", surveyorId);
 
     const cases = await apiFetch("/survey-cases?" + params.toString());
+    allCases = cases || [];
+    // เก็บข้อมูลเรื่องทั้งหมดที่โหลดไว้ล่าสุด (ทุกหน้า ไม่ใช่แค่หน้าที่แสดงอยู่) ใช้ตอนเปิดฟอร์มแก้ไข/ลบ จะได้ไม่ต้องยิง API ซ้ำ
+    window._casesById = {};
+    allCases.forEach((c) => (window._casesById[c.id] = c));
+    casesPage = 1;
+    renderCasesTable();
+  }
+
+  function renderCasesTable() {
     const tbody = document.getElementById("casesBody");
     const colspan = (canEditCase || canDeleteCase) ? 11 : 10;
-    if (!cases || cases.length === 0) {
+    const countEl = document.getElementById("casesTotalCount");
+    const total = allCases.length;
+    if (countEl) countEl.textContent = total ? `ทั้งหมด ${total.toLocaleString("th-TH")} รายการ` : "";
+
+    if (total === 0) {
       tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">ไม่พบรายการที่ตรงเงื่อนไข</td></tr>`;
+      renderCasesPagination(0);
       return;
     }
-    // เก็บข้อมูลเรื่องทั้งหมดที่โหลดไว้ล่าสุด ใช้ตอนเปิดฟอร์มแก้ไข/ลบ จะได้ไม่ต้องยิง API ซ้ำ
-    window._casesById = {};
-    cases.forEach((c) => (window._casesById[c.id] = c));
 
-    tbody.innerHTML = cases
+    const totalPages = Math.max(1, Math.ceil(total / casesPageSize));
+    if (casesPage > totalPages) casesPage = totalPages;
+    const start = (casesPage - 1) * casesPageSize;
+    const pageCases = allCases.slice(start, start + casesPageSize);
+
+    tbody.innerHTML = pageCases
       .map(
         (c) => `
       <tr class="clickable" onclick="window.location.href='/case.html?id=${c.id}'">
@@ -447,13 +502,42 @@
         <td>${fmtDateOnly(c.received_date)}</td>
         <td>${fmtDateOnly(c.appointment_date)}</td>
         <td>${appointmentOverdueBadge(c)}</td>
-        <td>${checklistFull(c)}</td>
+        <td>${checklistIcons(c)}</td>
         <td>${statusBadge(c.status)}</td>
         <td>${satisfactionCell(c)}</td>
         ${manageCellHtml(c)}
       </tr>`
       )
       .join("");
+
+    renderCasesPagination(totalPages);
+  }
+
+  function renderCasesPagination(totalPages) {
+    const el = document.getElementById("casesPagination");
+    if (!el) return;
+    if (totalPages <= 1) {
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = `
+      <button type="button" class="btn btn-outline btn-sm" onclick="goToCasesPage(casesPage - 1)" ${casesPage <= 1 ? "disabled" : ""}>‹ ก่อนหน้า</button>
+      <span>หน้า ${casesPage} จาก ${totalPages}</span>
+      <button type="button" class="btn btn-outline btn-sm" onclick="goToCasesPage(casesPage + 1)" ${casesPage >= totalPages ? "disabled" : ""}>ถัดไป ›</button>
+    `;
+  }
+
+  function goToCasesPage(page) {
+    casesPage = page;
+    renderCasesTable();
+    document.querySelector(".table-scroll")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // เปลี่ยนจำนวนรายการต่อหน้า (10/20/50/100) — กลับไปหน้า 1 เสมอเพื่อไม่ให้งงว่าอยู่หน้าไหนของชุดข้อมูลใหม่
+  function changeCasesPageSize(size) {
+    casesPageSize = parseInt(size, 10) || 20;
+    casesPage = 1;
+    renderCasesTable();
   }
 
   // เซลล์ "จัดการ" ต่อแถว — กันการคลิกไม่ให้ไหลไปกระตุ้น onclick ของทั้งแถว (ซึ่งพาไปหน้ารายละเอียดเรื่อง) ด้วย

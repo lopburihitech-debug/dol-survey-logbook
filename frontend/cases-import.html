@@ -20,7 +20,8 @@
     <div class="hint-box" style="margin-top:0;">
       คอลัมน์ที่<b>ต้องมี</b>: <b>รว.12</b>, <b>ชื่อผู้ขอรังวัด</b>, <b>ประเภท</b> (ต้องสะกดตรงกับชื่อประเภทงานในระบบเป๊ะๆ — ดูรายชื่อทั้งหมดด้านล่าง)<br>
       คอลัมน์ที่มีก็ใส่ ไม่มีก็เว้นว่างได้: <b>วันที่รับเรื่อง</b>, <b>วันที่นัดรังวัด</b> (รองรับหลายรูปแบบ เช่น 2569-08-22, 22/08/2569 หรือ "22 ส.ค. 2569" — ใส่ปี พ.ศ. หรือ ค.ศ. ก็ได้ ระบบแปลงให้อัตโนมัติ), <b>เบอร์ติดต่อ/หมายเหตุ</b>, <b>สถานะเริ่มต้น</b> (เว้นว่างไว้ให้ระบบเลือกสถานะที่เหมาะสมให้อัตโนมัติจากข้อมูลแถวนั้น)<br>
-      ถ้าเลข รว.12 ซ้ำกับที่มีอยู่แล้วในระบบ หรือแถวไหนข้อมูลไม่ครบ ระบบจะข้ามเฉพาะแถวนั้นและแจ้งเหตุผลให้ทราบ ไม่ทำให้แถวอื่นที่ถูกต้องนำเข้าไม่สำเร็จไปด้วย
+      ถ้าเลข รว.12 ซ้ำกับที่มีอยู่แล้วในระบบ หรือแถวไหนข้อมูลไม่ครบ ระบบจะข้ามเฉพาะแถวนั้นและแจ้งเหตุผลให้ทราบ ไม่ทำให้แถวอื่นที่ถูกต้องนำเข้าไม่สำเร็จไปด้วย<br>
+      มีไฟล์ Excel รายงานงานค้างที่ export ตรงจากระบบเดิมอยู่แล้ว (เช่น รว.71) และไม่อยากจัดคอลัมน์ใหม่? เลื่อนลงไปที่ <b>"วิธีที่ 2"</b> ด้านล่าง — อัปโหลดไฟล์เดิมได้เลย
     </div>
     <div class="action-bar">
       <button type="button" class="btn btn-outline" id="downloadTemplateBtn">⬇ ดาวน์โหลดเทมเพลต CSV</button>
@@ -31,6 +32,7 @@
 
   <div class="card">
     <h2>2. เลือกสำนักงาน / ช่างรังวัดที่รับผิดชอบ</h2>
+    <div class="subtitle" style="margin-top:-4px;">ใช้ร่วมกันทั้งวิธีที่ 1 (ไฟล์ CSV) และวิธีที่ 2 (ไฟล์ Excel รูปแบบเดิม) ด้านล่าง</div>
     <div class="form-grid">
       <div class="form-row">
         <label>ช่างรังวัดที่รับผิดชอบงานทั้งหมดในไฟล์นี้</label>
@@ -44,15 +46,42 @@
   </div>
 
   <div class="card">
-    <h2>3. เลือกไฟล์และนำเข้า</h2>
+    <h2>3. วิธีที่ 1 — เลือกไฟล์ CSV และนำเข้า</h2>
     <div class="form-row">
       <label>ไฟล์ CSV</label>
       <input type="file" id="ci_file" accept=".csv,text/csv">
     </div>
     <div class="action-bar">
-      <button type="button" class="btn btn-primary" id="importBtn">นำเข้าข้อมูล</button>
+      <button type="button" class="btn btn-primary" id="importBtn">นำเข้าข้อมูล (CSV)</button>
     </div>
     <div id="importError" class="error-text" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <h2>วิธีที่ 2 — นำเข้าจากไฟล์ Excel รูปแบบเดิม (เช่น รว.71)</h2>
+    <div class="hint-box" style="margin-top:0;">
+      อัปโหลดไฟล์ .xlsx ที่ export ตรงจากระบบเดิมได้เลย ไม่ต้องจัดหัวตาราง/คอลัมน์ใหม่ — ระบบจะอ่านโครงสร้างไฟล์ให้อัตโนมัติ
+      (รองรับหัวตารางที่ซ้ำหลายบล็อกในไฟล์เดียว) แล้วให้ท่าน "จับคู่" ชื่อประเภทงานที่พบในไฟล์กับประเภทงานที่มีอยู่ในระบบนี้อีกครั้งก่อนนำเข้าจริง
+      (เพราะชื่อประเภทงานในไฟล์เดิมอาจสะกด/เขียนไม่ตรงกับระบบนี้เป๊ะๆ)
+    </div>
+    <div class="form-row">
+      <label>ไฟล์ Excel (.xlsx)</label>
+      <input type="file" id="ci_rw71_file" accept=".xlsx">
+    </div>
+    <div id="rw71Error" class="error-text" style="display:none;"></div>
+    <div id="rw71PreviewBox" style="display:none; margin-top:16px;">
+      <div id="rw71Summary" style="font-size:13.5px; color:var(--text-muted); margin-bottom:10px;"></div>
+      <div style="font-weight:600; font-size:13.5px; margin-bottom:8px;">จับคู่ประเภทงานที่พบในไฟล์ กับประเภทงานในระบบ</div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ชื่อประเภทงานในไฟล์เดิม</th><th>จำนวนแถว</th><th>จับคู่กับประเภทงานในระบบนี้</th></tr></thead>
+          <tbody id="rw71TypesBody"></tbody>
+        </table>
+      </div>
+      <div class="action-bar" style="margin-top:14px;">
+        <button type="button" class="btn btn-primary" id="rw71ImportBtn">นำเข้าข้อมูล (Excel รูปแบบเดิม)</button>
+      </div>
+    </div>
   </div>
 
   <div class="card" id="resultCard" style="display:none;">
@@ -116,10 +145,13 @@
     });
   }
 
+  let surveyTypesCache = [];
+
   async function loadSurveyTypes() {
     const types = await apiFetch("/survey-types");
+    surveyTypesCache = types || [];
     const box = document.getElementById("typesBox");
-    box.innerHTML = (types || []).map((t) => `<div style="padding:3px 0; border-bottom:1px solid #F1F5F1;">${t.name}</div>`).join("");
+    box.innerHTML = surveyTypesCache.map((t) => `<div style="padding:3px 0; border-bottom:1px solid #F1F5F1;">${t.name}</div>`).join("");
   }
 
   document.getElementById("toggleTypesBtn").addEventListener("click", () => {
@@ -181,6 +213,100 @@
     } finally {
       btn.disabled = false;
       btn.textContent = "นำเข้าข้อมูล";
+    }
+  });
+
+  // วิธีที่ 2: นำเข้าจากไฟล์ Excel รูปแบบเดิม — เลือกไฟล์แล้วอ่านตัวอย่างทันที (preview) เพื่อให้ผู้ใช้จับคู่ชื่อ
+  // ประเภทงานที่พบในไฟล์กับประเภทงานในระบบนี้ก่อน ยังไม่บันทึกอะไรลงฐานข้อมูลในขั้นตอนนี้
+  let rw71ParsedTypes = []; // เก็บผลจาก preview ไว้ใช้ตอนสร้าง type_mapping ตอนกดนำเข้าจริง
+
+  document.getElementById("ci_rw71_file").addEventListener("change", async () => {
+    const errorBox = document.getElementById("rw71Error");
+    errorBox.style.display = "none";
+    document.getElementById("rw71PreviewBox").style.display = "none";
+    const file = document.getElementById("ci_rw71_file").files[0];
+    if (!file) return;
+
+    try {
+      const result = await apiUpload("/survey-cases/import-rw71/preview", file, {});
+      rw71ParsedTypes = result.types || [];
+      renderRw71Preview(result.row_count || 0, rw71ParsedTypes);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    }
+  });
+
+  function renderRw71Preview(rowCount, types) {
+    document.getElementById("rw71Summary").innerHTML =
+      `พบข้อมูล <b>${rowCount}</b> แถวในไฟล์ — พบชื่อประเภทงาน <b>${types.length}</b> แบบ ` +
+      `กรุณาตรวจสอบการจับคู่ด้านล่าง (แบบที่จับคู่อัตโนมัติได้แล้วเพราะสะกดตรงกับระบบเป๊ะๆ ยังตรวจทานอีกครั้งได้) — ` +
+      `แถวที่ไม่ได้จับคู่ประเภทงานจะไม่ถูกนำเข้า`;
+
+    const options = surveyTypesCache.map((t) => `<option value="${t.id}">${t.name}</option>`).join("");
+    document.getElementById("rw71TypesBody").innerHTML = types
+      .map((t, i) => {
+        const selected = t.suggested_survey_type_id || "";
+        return `
+      <tr>
+        <td>${t.raw_text}</td>
+        <td>${t.count}</td>
+        <td>
+          <select data-idx="${i}" class="rw71-type-select">
+            <option value="">— ข้าม (ไม่นำเข้าแถวที่มีประเภทงานนี้) —</option>
+            ${options}
+          </select>
+        </td>
+      </tr>`;
+      })
+      .join("");
+    // ตั้งค่าเริ่มต้นของแต่ละ select เป็นประเภทงานที่ auto-suggest ไว้ (ถ้ามี) — ทำหลังใส่ innerHTML เพราะตั้งค่าผ่าน
+    // attribute "selected" ในสตริง HTML ตรงๆ ไม่ได้สะดวกเท่าตั้งผ่าน .value ของ element จริง
+    document.querySelectorAll(".rw71-type-select").forEach((sel) => {
+      const t = types[Number(sel.getAttribute("data-idx"))];
+      sel.value = t.suggested_survey_type_id || "";
+    });
+    document.getElementById("rw71PreviewBox").style.display = "block";
+  }
+
+  document.getElementById("rw71ImportBtn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("rw71Error");
+    errorBox.style.display = "none";
+    const file = document.getElementById("ci_rw71_file").files[0];
+    const officeId = document.getElementById("ci_office_id").value;
+    const surveyorId = document.getElementById("ci_surveyor_id").value;
+
+    if (!file) {
+      errorBox.textContent = "กรุณาเลือกไฟล์ Excel ก่อน";
+      errorBox.style.display = "block";
+      return;
+    }
+    if (!officeId) {
+      errorBox.textContent = "กรุณาเลือกสำนักงาน";
+      errorBox.style.display = "block";
+      return;
+    }
+
+    const typeMapping = {};
+    document.querySelectorAll(".rw71-type-select").forEach((sel) => {
+      const t = rw71ParsedTypes[Number(sel.getAttribute("data-idx"))];
+      if (sel.value) typeMapping[t.raw_text] = sel.value;
+    });
+
+    const btn = document.getElementById("rw71ImportBtn");
+    btn.disabled = true;
+    btn.textContent = "กำลังนำเข้า...";
+    try {
+      const extra = { office_id: officeId, type_mapping: JSON.stringify(typeMapping) };
+      if (surveyorId) extra.surveyor_id = surveyorId;
+      const result = await apiUpload("/survey-cases/import-rw71", file, extra);
+      renderResult(result);
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "นำเข้าข้อมูล (Excel รูปแบบเดิม)";
     }
   });
 

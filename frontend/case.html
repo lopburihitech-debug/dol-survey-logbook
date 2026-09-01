@@ -280,13 +280,13 @@
 
       <div class="card">
         <h2>ข้อมูลงาน</h2>
+        <!-- ตัดแถว SLA/วันครบกำหนด/ความสำคัญ ออกจากมุมมองนี้ตามที่ผู้ใช้ระบบขอ (วงกลมชี้ในภาพหน้าจอจริง ไม่ต้องการให้
+             แสดง) ยังแก้ไขค่าเหล่านี้ได้ตามปกติผ่านฟอร์ม "แก้ไขเรื่อง" (ec_dueDate/ec_priority) เพียงแต่ไม่แสดงในการ์ด
+             สรุปนี้อีกต่อไป — due_date ยังใช้คำนวณเรื่องเกินกำหนดในหน้าอื่น (เช่น รายงาน) อยู่เหมือนเดิม ไม่ได้ลบข้อมูล -->
         <div class="info-grid">
           <div><span class="k">ประเภทงาน:</span> ${type ? type.name : "-"}</div>
-          <div><span class="k">SLA:</span> ${type ? type.target_days + " วันทำการ" : "-"}</div>
           <div><span class="k">วันรับเรื่อง:</span> ${fmtDateOnly(c.received_date)}</div>
-          <div><span class="k">วันครบกำหนด:</span> ${fmtDateOnly(c.due_date)}</div>
           <div><span class="k">วันนัดรังวัด:</span> ${fmtDateOnly(c.appointment_date)}</div>
-          <div><span class="k">ความสำคัญ:</span> ${c.priority}</div>
           <div><span class="k">นายช่างรังวัดที่รับผิดชอบ:</span> ${surveyor ? surveyor.full_name + (surveyor.nickname ? " (" + surveyor.nickname + ")" : "") : "<span style='color:var(--text-muted);'>ยังไม่มอบหมาย</span>"}</div>
         </div>
 
@@ -899,6 +899,12 @@
     satellite: {
       label: "🛰️ ภาพถ่ายดาวเทียม",
       maxZoom: 19,
+      // ภาพถ่ายดาวเทียมความละเอียดสูง (ระดับซูม 18-19) มีอยู่จริงเฉพาะพื้นที่ในเมือง/พื้นที่ที่ทำแผนที่ไว้แล้วเท่านั้น
+      // พื้นที่ชนบท (เช่น แปลงที่ดินต่างจังหวัดส่วนใหญ่ในระบบนี้) มักมีภาพจริงถึงระดับนี้เป็นค่าประมาณที่ปลอดภัยทั่วโลก
+      // เกินจากนี้ผู้ให้บริการจะส่ง tile ว่างเปล่าเขียนคำว่า "Map data not yet available" มาแทน — renderMarkerMap()
+      // จะขยายภาพจากระดับนี้ขึ้นไปแทนการขอ tile ที่ซูมลึกกว่านี้ตรงๆ (ดูตัวแปร overzoomFactor) เพื่อไม่ให้ผู้ใช้เจอ
+      // ข้อความนี้เมื่อกดซูมเข้าไปสุด (ภาพจะเบลอขึ้นแทน ซึ่งดีกว่าเห็นข้อความ error เป็นภาษาอังกฤษทับแผนที่)
+      maxNativeZoom: 17,
       urlTemplate: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
       attributionHtml: `© <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics`,
     },
@@ -1034,6 +1040,13 @@
     // โมเสกภาพพื้นแผนที่จริง ครอบคลุมเฉพาะ tile ที่ตกอยู่ในกรอบขนาด width×height เท่านั้น (จำนวน tile ที่ต้องโหลด
     // จะแปรผันตามขนาดกรอบจริง ไม่ใช่ค่าคงที่แบบเดิมอีกต่อไป เพราะตอนนี้กรอบเป็นความกว้างเต็มการ์ด/สูงคงที่)
     const tilesPerSide = Math.pow(2, zoom);
+    // "ซูมเกินจริง" (over-zoom) — บาง basemap (เช่นภาพถ่ายดาวเทียม) ไม่มีภาพจริงที่ระดับซูมลึกๆ ในบางพื้นที่ (โดยเฉพาะ
+    // พื้นที่ชนบท) ถ้าขอ tile ตรงๆ ที่ระดับซูมปัจจุบันจะได้ tile ว่างเขียน "Map data not yet available" แทน — จึงขอ
+    // tile จากระดับ maxNativeZoom (ระดับลึกสุดที่ยังมีภาพจริงแน่นอน) มาแทน แล้วขยาย+ตัดเฉพาะส่วนที่ตรงกับตำแหน่งนี้
+    // ด้วย CSS background-size/position (เทคนิคเดียวกับที่ไลบรารีแผนที่อย่าง Leaflet ใช้ภายใน เรียกว่า maxNativeZoom)
+    const nativeZoom = Math.min(zoom, basemap.maxNativeZoom || zoom);
+    const overzoomFactor = zoom - nativeZoom;
+    const overzoomScale = Math.pow(2, overzoomFactor);
     const firstTileX = Math.floor(centerOriginX / MERCATOR_TILE_SIZE);
     const lastTileX = Math.floor((centerOriginX + width) / MERCATOR_TILE_SIZE);
     const firstTileY = Math.floor(centerOriginY / MERCATOR_TILE_SIZE);
@@ -1045,8 +1058,19 @@
         if (ty < 0 || ty >= tilesPerSide) continue; // ละติจูดไม่ wrap (เหนือ/ใต้สุดของแผนที่)
         const left = tx * MERCATOR_TILE_SIZE - centerOriginX;
         const top = ty * MERCATOR_TILE_SIZE - centerOriginY;
-        tilesHtml += `<img src="${basemap.urlTemplate(zoom, wrappedX, ty)}" loading="lazy" alt=""
-          style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;" />`;
+        if (overzoomFactor > 0) {
+          const nativeTx = Math.floor(wrappedX / overzoomScale);
+          const nativeTy = Math.floor(ty / overzoomScale);
+          const subX = wrappedX % overzoomScale, subY = ty % overzoomScale; // ตำแหน่งย่อยภายใน native tile เดียวกัน
+          const bgSize = MERCATOR_TILE_SIZE * overzoomScale;
+          tilesHtml += `<div style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;
+            background-image:url('${basemap.urlTemplate(nativeZoom, nativeTx, nativeTy)}');
+            background-size:${bgSize}px ${bgSize}px;
+            background-position:-${subX * MERCATOR_TILE_SIZE}px -${subY * MERCATOR_TILE_SIZE}px;"></div>`;
+        } else {
+          tilesHtml += `<img src="${basemap.urlTemplate(zoom, wrappedX, ty)}" loading="lazy" alt=""
+            style="position:absolute; left:${left}px; top:${top}px; width:${MERCATOR_TILE_SIZE}px; height:${MERCATOR_TILE_SIZE}px;" />`;
+        }
       }
     }
 

@@ -145,6 +145,9 @@ const ROLE_LABELS = {
   province_admin: "ผู้ดูแลระดับจังหวัด",
   supervisor: "หัวหน้าช่างรังวัด",
   branch_admin: "เจ้าพนักงานที่ดินสาขา",
+  // ผู้ดูแลระดับสาขา — บทบาทแยกต่างหากจาก branch_admin ข้างบน มีสิทธิ์เดียวคือจัดการบัญชีผู้ใช้ที่เป็น "ช่างรังวัด"
+  // ในสำนักงานตัวเอง (หน้า "จัดการผู้ใช้งาน") ไม่เกี่ยวกับงานรังวัด/เคสใดๆ เลย — ดู constants.py ฝั่ง backend
+  branch_user_admin: "ผู้ดูแลระดับสาขา",
   surveyor: "ช่างรังวัด",
   citizen: "ประชาชน",
 };
@@ -256,59 +259,69 @@ async function renderTopbar(activePage) {
   // หน้าแรกหลังล็อกอินของช่างรังวัดคือหน้าสรุปผลงานของตัวเอง (surveyor-profile.html) แทน ดู dashboard.html
   // ซึ่งจะ redirect ไปหน้านั้นให้อัตโนมัติถ้าช่างรังวัดหลงเข้ามาที่ /dashboard.html โดยตรง
   const primary = [];
-  // ลิงก์ "สรุปผล" (หน้าสรุปผลงาน/KPI ของตัวเอง) เฉพาะช่างรังวัด — วางไว้เป็นรายการแรกสุดของเมนูตามที่ต้องการ
-  // ต้องหา record ช่างรังวัดที่ตรงกับบัญชีนี้ก่อน (endpoint เดียวกับที่ dashboard.html ใช้ตอน redirect)
-  // ถ้าไม่พบ (กรณีผิดปกติ) ก็ไม่ต้องแสดงลิงก์นี้เลย — ในจังหวะเดียวกันนี้ดึงรายการงานของตัวเองมานับ "งานค้าง"
-  // ไว้แปะเป็นตัวเลขที่ลิงก์ "งานของฉัน" ด้วยเลย (คนละหน้าก็ยังเห็นตัวเลขนี้ได้ ไม่ต้องรอเข้าหน้างานของฉันก่อน)
-  let myPendingCount = 0;
-  if (user.role === "surveyor") {
-    const [surveyors, myCases] = await Promise.all([
-      apiFetch("/surveyors").then((r) => r || []),
-      apiFetch("/survey-cases").then((r) => r || []),
-    ]);
-    const mine = surveyors.find((s) => s.user_id === user.id);
-    if (mine) {
-      primary.push({ href: "/surveyor-profile.html?id=" + mine.id, label: "สรุปผล", key: "surveyor-profile", icon: NAV_ICONS.summary });
-    }
-    myPendingCount = myCases.filter((c) => !NAV_CLOSED_SET.has(c.status)).length;
-  }
-  if (user.role !== "surveyor") {
-    primary.push({ href: "/dashboard.html", label: "Dashboard", key: "dashboard", icon: NAV_ICONS.dashboard });
-  }
-  if (user.role === "surveyor") {
-    primary.push({ href: "/my-work.html", label: "งานของฉัน", key: "my-work", icon: NAV_ICONS.cases, badge: myPendingCount || null });
-  } else {
-    primary.push({ href: "/cases.html", label: "งานรังวัด", key: "cases", icon: NAV_ICONS.cases });
-  }
-  primary.push({ href: "/calendar.html", label: "ปฏิทินนัดรังวัด", key: "calendar", icon: NAV_ICONS.calendar });
-  // "แผนที่ช่างรังวัด" — ดูตำแหน่งงานที่ช่างรังวัดแต่ละคนออกไปตามวันนัด บนแผนที่ พร้อมระยะทางจากสำนักงาน จำกัดเฉพาะ
-  // บทบาทเชิงบริหาร/หัวหน้า (เหมือนเมนู "ช่างรังวัด" ด้านล่าง) เพราะเป็นข้อมูลตำแหน่งของพนักงานหลายคนพร้อมกัน ไม่ใช่
-  // ข้อมูลส่วนตัวของช่างรังวัดเอง (ต่างจากปฏิทินซึ่งช่างรังวัดดูตารางนัดของตัวเองได้ปกติ)
-  if (["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(user.role)) {
-    primary.push({ href: "/field-map.html", label: "แผนที่ช่างรังวัด", key: "field-map", icon: NAV_ICONS.map });
-  }
-  // "รายงาน" — พิมพ์รายงานสรุปงานรังวัดตามขอบเขตสิทธิ์ของผู้ใช้แต่ละคน (ทุกบทบาทที่ล็อกอินผ่านเมนูนี้เห็นได้
-  // เนื้อหาในหน้าจะถูกจำกัดขอบเขตอัตโนมัติผ่าน scope_case_filter()/dashboard/by-office ฝั่ง backend อยู่แล้ว)
-  primary.push({ href: "/report.html", label: "รายงาน", key: "report", icon: NAV_ICONS.report });
-  if (["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(user.role)) {
-    primary.push({ href: "/surveyors.html", label: "ช่างรังวัด", key: "surveyors", icon: NAV_ICONS.people });
-  }
-
-  // งานเชิงจัดการ + งานดูแลระบบระดับสูงสุด — รวมไว้ในเมนูย่อยเดียว "จัดการระบบ" ไม่ให้แถวหลักรกเกินไป (เดิมแยกเป็น
-  // 2 เมนูย่อย "จัดการ"/"ระบบ" — รวมเป็นเมนูเดียวตามที่ผู้ใช้ขอ)
-  // นำเข้างาน (bulk import): จำกัดเฉพาะบทบาทที่สร้างเรื่องได้ ไม่รวม branch_admin (สร้างเรื่องใหม่ไม่ได้)
-  // จัดการช่างรังวัด: เจ้าพนักงานที่ดินสาขาก็เพิ่ม/แก้ไขบัญชีช่างรังวัดในสาขาตนเองได้ด้วย (ดู surveyors.py)
-  // ผู้ใช้งาน/สำนักงาน: เฉพาะ system_admin เท่านั้น
   const manageItems = [];
-  if (["system_admin", "administrator", "province_admin"].includes(user.role)) {
-    manageItems.push({ href: "/cases-import.html", label: "นำเข้างาน", key: "cases-import" });
-  }
-  if (["system_admin", "administrator", "province_admin", "branch_admin"].includes(user.role)) {
-    manageItems.push({ href: "/surveyors-manage.html", label: "จัดการช่างรังวัด", key: "surveyors-manage" });
-  }
-  if (user.role === "system_admin") {
-    manageItems.push({ href: "/users.html", label: "ผู้ใช้งาน", key: "users" });
-    manageItems.push({ href: "/offices.html", label: "สำนักงาน", key: "offices" });
+
+  // ผู้ดูแลระดับสาขา (branch_user_admin) ไม่เกี่ยวกับงานรังวัด/เคสใดๆ เลย — มีสิทธิ์เดียวคือหน้า "จัดการผู้ใช้งาน"
+  // (จัดการเฉพาะบัญชีช่างรังวัดในสำนักงานตัวเอง ดู constants.py/users.py ฝั่ง backend) จึงให้เมนูมีแค่ลิงก์เดียว
+  // ไม่ต้องสร้าง Dashboard/งานรังวัด/ปฏิทิน/รายงาน ฯลฯ ให้เลย (กดไปก็เจอ 403 จาก backend อยู่ดีเพราะไม่มีสิทธิ์)
+  if (user.role === "branch_user_admin") {
+    primary.push({ href: "/users.html", label: "จัดการผู้ใช้งาน", key: "users", icon: NAV_ICONS.people });
+  } else {
+    // ลิงก์ "สรุปผล" (หน้าสรุปผลงาน/KPI ของตัวเอง) เฉพาะช่างรังวัด — วางไว้เป็นรายการแรกสุดของเมนูตามที่ต้องการ
+    // ต้องหา record ช่างรังวัดที่ตรงกับบัญชีนี้ก่อน (endpoint เดียวกับที่ dashboard.html ใช้ตอน redirect)
+    // ถ้าไม่พบ (กรณีผิดปกติ) ก็ไม่ต้องแสดงลิงก์นี้เลย — ในจังหวะเดียวกันนี้ดึงรายการงานของตัวเองมานับ "งานค้าง"
+    // ไว้แปะเป็นตัวเลขที่ลิงก์ "งานของฉัน" ด้วยเลย (คนละหน้าก็ยังเห็นตัวเลขนี้ได้ ไม่ต้องรอเข้าหน้างานของฉันก่อน)
+    let myPendingCount = 0;
+    if (user.role === "surveyor") {
+      const [surveyors, myCases] = await Promise.all([
+        apiFetch("/surveyors").then((r) => r || []),
+        apiFetch("/survey-cases").then((r) => r || []),
+      ]);
+      const mine = surveyors.find((s) => s.user_id === user.id);
+      if (mine) {
+        primary.push({ href: "/surveyor-profile.html?id=" + mine.id, label: "สรุปผล", key: "surveyor-profile", icon: NAV_ICONS.summary });
+      }
+      myPendingCount = myCases.filter((c) => !NAV_CLOSED_SET.has(c.status)).length;
+    }
+    if (user.role !== "surveyor") {
+      primary.push({ href: "/dashboard.html", label: "Dashboard", key: "dashboard", icon: NAV_ICONS.dashboard });
+    }
+    if (user.role === "surveyor") {
+      primary.push({ href: "/my-work.html", label: "งานของฉัน", key: "my-work", icon: NAV_ICONS.cases, badge: myPendingCount || null });
+    } else {
+      primary.push({ href: "/cases.html", label: "งานรังวัด", key: "cases", icon: NAV_ICONS.cases });
+    }
+    primary.push({ href: "/calendar.html", label: "ปฏิทินนัดรังวัด", key: "calendar", icon: NAV_ICONS.calendar });
+    // "แผนที่ช่างรังวัด" — ดูตำแหน่งงานที่ช่างรังวัดแต่ละคนออกไปตามวันนัด บนแผนที่ พร้อมระยะทางจากสำนักงาน บทบาทเชิง
+    // บริหาร/หัวหน้าเห็นตำแหน่งของช่างรังวัดทุกคนในขอบเขตตน ส่วนช่างรังวัดเองก็ดูได้เช่นกัน (ตามที่ผู้ใช้ระบบขอ) แต่เห็น
+    // เฉพาะตำแหน่งเรื่องที่ตนรับผิดชอบเท่านั้น — field-map.html จำกัดขอบเขตให้อัตโนมัติผ่าน scope_case_filter() ฝั่ง
+    // backend (เหมือนปฏิทินนัดรังวัดที่ช่างรังวัดดูตารางนัดของตัวเองได้ปกติอยู่แล้ว)
+    if (["system_admin", "administrator", "province_admin", "supervisor", "branch_admin", "surveyor"].includes(user.role)) {
+      primary.push({ href: "/field-map.html", label: "แผนที่ช่างรังวัด", key: "field-map", icon: NAV_ICONS.map });
+    }
+    // "รายงาน" — พิมพ์รายงานสรุปงานรังวัดตามขอบเขตสิทธิ์ของผู้ใช้แต่ละคน (ทุกบทบาทที่ล็อกอินผ่านเมนูนี้เห็นได้
+    // เนื้อหาในหน้าจะถูกจำกัดขอบเขตอัตโนมัติผ่าน scope_case_filter()/dashboard/by-office ฝั่ง backend อยู่แล้ว)
+    primary.push({ href: "/report.html", label: "รายงาน", key: "report", icon: NAV_ICONS.report });
+    if (["system_admin", "administrator", "province_admin", "supervisor", "branch_admin"].includes(user.role)) {
+      primary.push({ href: "/surveyors.html", label: "ช่างรังวัด", key: "surveyors", icon: NAV_ICONS.people });
+    }
+
+    // งานเชิงจัดการ + งานดูแลระบบระดับสูงสุด — รวมไว้ในเมนูย่อยเดียว "จัดการระบบ" ไม่ให้แถวหลักรกเกินไป (เดิมแยกเป็น
+    // 2 เมนูย่อย "จัดการ"/"ระบบ" — รวมเป็นเมนูเดียวตามที่ผู้ใช้ขอ)
+    // นำเข้างาน (bulk import): จำกัดเฉพาะบทบาทที่สร้างเรื่องได้ ไม่รวม branch_admin (สร้างเรื่องใหม่ไม่ได้)
+    // จัดการช่างรังวัด: เจ้าพนักงานที่ดินสาขาก็เพิ่ม/แก้ไขบัญชีช่างรังวัดในสาขาตนเองได้ด้วย (ดู surveyors.py)
+    // ผู้ใช้งาน: system_admin หรือผู้ดูแลระดับสาขา (ขอบเขตแคบกว่ามาก — ดูเงื่อนไข role==="branch_user_admin" ด้านบน
+    // ที่ให้ลิงก์นี้เป็นรายการหลักไปแล้วแทน ไม่ต้องซ้ำในนี้อีก) / สำนักงาน: เฉพาะ system_admin เท่านั้น
+    if (["system_admin", "administrator", "province_admin"].includes(user.role)) {
+      manageItems.push({ href: "/cases-import.html", label: "นำเข้างาน", key: "cases-import" });
+    }
+    if (["system_admin", "administrator", "province_admin", "branch_admin"].includes(user.role)) {
+      manageItems.push({ href: "/surveyors-manage.html", label: "จัดการช่างรังวัด", key: "surveyors-manage" });
+    }
+    if (user.role === "system_admin") {
+      manageItems.push({ href: "/users.html", label: "ผู้ใช้งาน", key: "users" });
+      manageItems.push({ href: "/offices.html", label: "สำนักงาน", key: "offices" });
+    }
   }
 
   let navHtml = primary.map((n) => navLinkHtml(n, activePage)).join("");

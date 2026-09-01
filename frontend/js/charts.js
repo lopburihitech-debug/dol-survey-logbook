@@ -21,8 +21,9 @@ function groupOfficesByProvince(offices) {
     .map((province) => ({ province, offices: byProvince[province] }));
 }
 
-// กราฟแท่งแนวนอนแบบ stacked ต่อแถว (สำนักงาน/สาขา หรือจังหวัด แล้วแต่ข้อมูลที่ส่งเข้ามา) แบ่งเป็น 3 ส่วน: เสร็จแล้ว (เขียว) /
-// ค้างแต่ยังไม่เกินกำหนด (ทอง) / เกินกำหนด (แดง) — เรียงจากแถวที่มีงานค้างมากที่สุดขึ้นก่อน เพื่อให้เห็นภาระงานที่ต้องเร่งจัดการได้เร็วที่สุด
+// กราฟแท่งแนวนอนแบบ stacked ต่อแถว (สำนักงาน/สาขา หรือจังหวัด แล้วแต่ข้อมูลที่ส่งเข้ามา) แบ่งเป็น 2 ส่วน: เสร็จแล้ว (เขียว) /
+// ค้าง (ทอง — รวมทั้งที่เกินกำหนดและยังไม่เกินกำหนดเข้าด้วยกัน ไม่แยกสีเกินกำหนดอีกต่อไปตามที่ผู้ใช้ระบบร้องขอ)
+// — เรียงจากแถวที่มีงานค้างมากที่สุดขึ้นก่อน เพื่อให้เห็นภาระงานที่ต้องเร่งจัดการได้เร็วที่สุด
 // rows[i].sublabel (ไม่ระบุก็ได้): บรรทัดที่ 2 ตัวเล็กจางกว่าใต้ป้ายชื่อหลัก (เช่น ชื่อจังหวัดกำกับใต้ชื่อสำนักงาน)
 // — ใช้แทนการต่อสตริงชื่อจังหวัด+ชื่อสำนักงานเป็นบรรทัดเดียว เพราะข้อความยาวรวมกันจะยาวเกินคอลัมน์ป้ายชื่อ
 // จนถูกตัด/บังไปโดย viewBox (SVG ตัดสิ่งที่วาดเลย x=0 ไปทางซ้ายทิ้งเสมอ)
@@ -48,7 +49,6 @@ function renderOfficeBarChart(container, rows, opts) {
   const parts = sorted.map((r, i) => {
     const y = i * rowH + 4;
     const centerY = y + barH / 2;
-    const onTime = Math.max(r.pending_cases - r.overdue_cases, 0);
     const highlighted = !!opts.highlightLabel && r.label === opts.highlightLabel;
     let x = labelW;
     let segs = "";
@@ -57,14 +57,10 @@ function renderOfficeBarChart(container, rows, opts) {
       segs += `<rect x="${x}" y="${y}" width="${Math.max(w, 1)}" height="${barH}" fill="var(--success)"></rect>`;
       x += w;
     }
-    if (onTime > 0) {
-      const w = onTime * scale;
+    // งานค้างทั้งหมด (เกินกำหนด + ยังไม่เกินกำหนด) รวมเป็นส่วนเดียวสีทอง ไม่แยกสีเกินกำหนดเป็นแดงอีกต่อไป
+    if (r.pending_cases > 0) {
+      const w = r.pending_cases * scale;
       segs += `<rect x="${x}" y="${y}" width="${Math.max(w, 1)}" height="${barH}" fill="var(--gold)"></rect>`;
-      x += w;
-    }
-    if (r.overdue_cases > 0) {
-      const w = r.overdue_cases * scale;
-      segs += `<rect x="${x}" y="${y}" width="${Math.max(w, 1)}" height="${barH}" fill="var(--danger)"></rect>`;
       x += w;
     }
     if (r.total_cases === 0) {
@@ -92,8 +88,7 @@ function renderOfficeBarChart(container, rows, opts) {
     </svg>
     <div style="display:flex; gap:16px; flex-wrap:wrap; margin-top:8px; font-size:12px; color:var(--text-muted);">
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--success);margin-right:5px;vertical-align:middle;"></span>เสร็จแล้ว</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--gold);margin-right:5px;vertical-align:middle;"></span>ค้าง (ยังไม่เกินกำหนด)</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--danger);margin-right:5px;vertical-align:middle;"></span>เกินกำหนด</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--gold);margin-right:5px;vertical-align:middle;"></span>ค้าง (รวมเกินกำหนด)</span>
     </div>
   `;
 }
