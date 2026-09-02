@@ -36,6 +36,7 @@ def get_connection():
 # จะไม่เพิ่มคอลัมน์ใหม่ให้ตารางที่มีอยู่แล้ว จึงต้อง ALTER TABLE เสริมแบบ idempotent ตรงนี้)
 _COLUMN_MIGRATIONS = [
     ("parcels", "location_url", "TEXT"),
+    ("parcels", "deed_type", "TEXT"),  # ประเภทเอกสารสิทธิ์ เช่น "โฉนดที่ดิน", "น.ส.3", "น.ส.3 ก.", "น.ส.3 ข."
     ("survey_cases", "survey_result", "TEXT"),
     ("survey_cases", "mapping_status", "TEXT"),
     ("survey_cases", "neighbor_status", "TEXT"),

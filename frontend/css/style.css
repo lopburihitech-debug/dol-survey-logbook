@@ -311,6 +311,77 @@ a { color: var(--primary); }
 @media (max-width: 480px) { #staffChatFabLabel { display: none; } } /* จอแคบมาก: เหลือแค่ไอคอนกันบังเนื้อหา */
 @media print { #staffChatFabWrap { display: none !important; } }
 
+/* กระดิ่งแจ้งเตือน "ข้อความจากประชาชน" — วางเหนือปุ่มแชทบอทเจ้าหน้าที่ (มุมขวาล่างเดียวกัน) ใช้โทนสีทอง (var(--gold))
+   ของระบบแทนโทนฟ้าของปุ่มแชทบอท ให้เห็นชัดว่าเป็นคนละฟีเจอร์กัน ซ่อนตัวเอง ([hidden]) เมื่อไม่มีข้อความค้างตอบ */
+#notifBellBtn {
+  position: fixed; right: 20px; bottom: 92px; z-index: 36;
+  width: 54px; height: 54px; border-radius: 50%; border: 3px solid var(--gold); cursor: pointer;
+  background: #fff; padding: 0; color: var(--gold);
+  box-shadow: var(--shadow-md);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s;
+}
+#notifBellBtn[hidden] { display: none; }
+#notifBellBtn:hover { transform: scale(1.07); }
+#notifBellBtn:active { transform: scale(0.94); }
+#notifBellBtn img { width: 36px; height: 36px; pointer-events: none; object-fit: contain; }
+.notif-bell-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 21px; height: 21px; padding: 0 5px;
+  border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+}
+.notif-bell-panel {
+  display: none;
+  position: fixed; right: 20px; bottom: 154px; z-index: 36;
+  width: 380px; max-width: calc(100vw - 40px); max-height: 70vh;
+  background: #fff; border-radius: 14px; box-shadow: var(--shadow-md);
+  flex-direction: column; overflow: hidden;
+}
+.notif-bell-panel.open { display: flex; animation: staffFabConfirmIn 0.18s ease-out; }
+.notif-bell-head { background: var(--primary); color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.notif-bell-head b { font-size: 14px; }
+.notif-bell-count { background: rgba(255, 255, 255, 0.22); border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 700; }
+.notif-bell-head button { margin-left: auto; background: transparent; border: none; color: #fff; font-size: 19px; cursor: pointer; line-height: 1; opacity: 0.85; }
+.notif-bell-list { overflow-y: auto; padding: 8px; }
+.notif-msg { border: 1px solid var(--accent-border); border-radius: 11px; padding: 11px 12px; margin-bottom: 8px; }
+.notif-msg:last-child { margin-bottom: 0; }
+.notif-msg-top { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; flex-wrap: wrap; }
+.notif-msg-code { font-weight: 800; font-size: 13.5px; color: var(--primary-dark); text-decoration: none; }
+.notif-msg-code:hover { color: var(--primary-light); }
+.notif-msg-who { font-size: 12.5px; color: var(--text-muted); }
+.notif-age { margin-left: auto; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.notif-age.new { background: var(--accent-light); color: var(--success); }
+.notif-age.warn { background: var(--gold-light); color: var(--warning); }
+.notif-age.late { background: #FDECEA; color: var(--danger); }
+.notif-msg-text {
+  font-size: 15px; line-height: 1.6; font-weight: 700; color: var(--primary-dark);
+  background: var(--accent-light); border-radius: 8px; padding: 8px 10px;
+  margin-bottom: 9px; word-break: break-word;
+}
+.notif-reply-row { display: flex; gap: 6px; }
+.notif-reply-row textarea {
+  flex: 1; border: 1px solid var(--accent-border); border-radius: 9px; padding: 7px 9px;
+  font-family: inherit; font-size: 13px; resize: none; height: 52px;
+}
+.notif-reply-row textarea:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.notif-reply-row button {
+  align-self: flex-end; background: var(--primary); color: #fff; border: none; border-radius: 9px;
+  padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.notif-reply-row button:hover { background: var(--primary-dark); }
+.notif-mark-read-link {
+  display: block; margin-top: 7px; background: none; border: none; padding: 0;
+  font-size: 11.5px; font-family: inherit; color: var(--text-muted); text-decoration: underline;
+  cursor: pointer; text-align: left;
+}
+.notif-mark-read-link:hover { color: var(--text); }
+.notif-bell-foot { border-top: 1px solid #EDF2EF; padding: 9px 14px; font-size: 12px; flex-shrink: 0; }
+.notif-bell-foot a { color: var(--primary); font-weight: 700; text-decoration: none; }
+@media (max-width: 480px) {
+  .notif-bell-panel { right: 10px; left: 10px; width: auto; bottom: 148px; }
+}
+@media print { #notifBellWrap { display: none !important; } }
+
 .card {
   background: white;
   border: 1px solid #E7EEE9;
@@ -648,6 +719,26 @@ input:focus, select:focus, textarea:focus {
   padding: 12px; margin-bottom: 10px; background: #FAFCFB; border: 1px solid #EEF2EF; border-radius: 8px;
 }
 .msg-item:last-child { margin-bottom: 0; }
+
+/* ข้อความแบบฟองแชท 2 ฝั่ง — ฝั่งประชาชน (ซ้าย โทนเทา) กับฝั่งเจ้าหน้าที่ (ขวา โทนเขียวหลักของระบบ) ให้แยกออกจากกัน
+   เด่นชัดเหมือนแอปแชททั่วไป แทนข้อความตัวเล็กสีเดียวกันทั้งหมดแบบเดิม */
+.chat-row { display: flex; flex-direction: column; margin-bottom: 10px; }
+.chat-row:last-child { margin-bottom: 0; }
+.chat-row.citizen { align-items: flex-start; }
+.chat-row.staff { align-items: flex-end; }
+.chat-sender { font-size: 11.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 3px; padding: 0 3px; }
+.chat-row.staff .chat-sender { color: var(--primary-dark); }
+.chat-bubble {
+  max-width: 88%; padding: 10px 13px; border-radius: 15px; font-size: 14px; font-weight: 600;
+  line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+}
+.chat-bubble.citizen {
+  background: #E9EEF3; color: #1E293B; border-bottom-left-radius: 4px;
+}
+.chat-bubble.staff {
+  background: var(--primary); color: #fff; border-bottom-right-radius: 4px;
+}
+.chat-time { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; padding: 0 3px; }
 
 .action-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 

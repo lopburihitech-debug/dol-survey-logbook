@@ -135,6 +135,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_survey_cases_office_code ON survey_cases(o
 CREATE TABLE IF NOT EXISTS parcels (
     id TEXT PRIMARY KEY,
     case_id TEXT UNIQUE NOT NULL REFERENCES survey_cases(id),
+    deed_type TEXT,            -- ประเภทเอกสารสิทธิ์ เช่น "โฉนดที่ดิน", "น.ส.3", "น.ส.3 ก.", "น.ส.3 ข."
     deed_no TEXT,
     parcel_no TEXT,
     survey_sheet_no TEXT,      -- ระวาง

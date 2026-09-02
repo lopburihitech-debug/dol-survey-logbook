@@ -233,9 +233,9 @@ def run():
             (new_id(), case_id, user_ids["admin"], ts),
         )
         conn.execute(
-            """INSERT INTO parcels (id, case_id, deed_no, parcel_no, survey_sheet_no, sub_district, district, province,
+            """INSERT INTO parcels (id, case_id, deed_type, deed_no, parcel_no, survey_sheet_no, sub_district, district, province,
                                      area_rai, area_ngan, area_wa, lat, lng, created_at, updated_at)
-               VALUES (?, ?, '12345', '678', '5628 III 7089', 'ทะเลชุบศร', 'เมืองลพบุรี', 'ลพบุรี', 2, 1, 45.5, 14.7995, 100.6534, ?, ?)""",
+               VALUES (?, ?, 'โฉนดที่ดิน', '12345', '678', '5628 III 7089', 'ทะเลชุบศร', 'เมืองลพบุรี', 'ลพบุรี', 2, 1, 45.5, 14.7995, 100.6534, ?, ?)""",
             (new_id(), case_id, ts, ts),
         )
         conn.execute(

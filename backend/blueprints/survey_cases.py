@@ -217,12 +217,13 @@ def create_case():
         parcel = payload.get("parcel")
         if parcel:
             conn.execute(
-                """INSERT INTO parcels (id, case_id, deed_no, parcel_no, survey_sheet_no, sub_district, district,
+                """INSERT INTO parcels (id, case_id, deed_type, deed_no, parcel_no, survey_sheet_no, sub_district, district,
                                          province, area_rai, area_ngan, area_wa, lat, lng, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     new_id(),
                     case_id,
+                    parcel.get("deed_type"),
                     parcel.get("deed_no"),
                     parcel.get("parcel_no"),
                     parcel.get("survey_sheet_no"),
@@ -832,7 +833,7 @@ def get_history(case_id):
 
 
 PARCEL_FIELDS = [
-    "deed_no", "parcel_no", "survey_sheet_no", "sub_district", "district", "province", "area_rai", "area_ngan", "area_wa", "lat", "lng", "location_url",
+    "deed_type", "deed_no", "parcel_no", "survey_sheet_no", "sub_district", "district", "province", "area_rai", "area_ngan", "area_wa", "lat", "lng", "location_url",
 ]
 
 
@@ -1267,6 +1268,40 @@ def reply_case_message(message_id):
             (message_id,),
         ).fetchone()
         return ok(dict(row))
+    finally:
+        conn.close()
+
+
+# route ต้องมาก่อน "/<case_id>/messages" ด้านบนไม่ได้เพราะคนละ path pattern กันอยู่แล้ว ("/messages/pending" ไม่มี
+# case_id คั่นกลาง) จึงไม่ชนกันไม่ว่าจะประกาศลำดับไหน — วางต่อจาก reply/resolve เพื่อให้ endpoint เกี่ยวกับ
+# "ข้อความจากประชาชน" ทั้งหมดอยู่ติดกัน อ่านง่าย
+@bp.get("/messages/pending")
+@login_required
+def list_pending_messages():
+    """ข้อความจากประชาชนที่ยังไม่ได้ตอบ (status='OPEN', เฉพาะชนิด 'INQUIRY') ในขอบเขตที่ผู้ใช้คนนี้มองเห็นได้ —
+    ใช้ scope_case_filter ตัวเดียวกับ list_cases() ด้านบนทุกประการ (ผู้บริหาร/จังหวัด/สำนักงานเห็นตามขอบเขตของตน,
+    ช่างรังวัดเห็นเฉพาะเรื่องที่ตนรับผิดชอบอยู่) จึงไม่ต้องเขียนเงื่อนไขสิทธิ์ซ้ำ — ให้ปุ่มกระดิ่งแจ้งเตือนใน topbar
+    (ดู renderNotificationBell() ใน frontend/js/api.js) เรียกเป็นระยะเพื่อรู้จำนวนข้อความค้างตอบ เรียงเก่าสุดก่อน
+    (ต้องตอบเรื่องที่ค้างนานที่สุดก่อน) จำกัดไม่เกิน 50 รายการกันข้อมูลบวมกรณีค้างสะสมมาก (ของจริงไม่น่าถึง)"""
+    conn = get_connection()
+    try:
+        where_sql, params = scope_case_filter(conn, g.current_user)
+        # where_sql อ้างคอลัมน์ของ survey_cases แบบไม่ระบุ prefix (ตามที่ scope_case_filter() ออกแบบไว้ให้ใช้กับ
+        # "SELECT ... FROM survey_cases WHERE {where_sql}" ตรงๆ เท่านั้น — ดู list_cases() ด้านบน) ถ้าเอาไป JOIN ตรงๆ
+        # กับ complaints ในคิวรีเดียว คอลัมน์ "id" จะกำกวมทันทีเพราะทั้งสองตารางมีคอลัมน์ชื่อ id เหมือนกัน จึงต้อง
+        # ครอบเป็น subquery ให้ where_sql เห็นเฉพาะ survey_cases ตัวเดียวเท่านั้น แล้วค่อยเทียบ case_id กับผลลัพธ์
+        rows = conn.execute(
+            f"""SELECT c.id, c.case_id, c.description, c.created_at,
+                       sc.case_code, sc.requester_name, sc.appointment_date
+                FROM complaints c
+                JOIN survey_cases sc ON sc.id = c.case_id
+                WHERE c.complaint_type = 'INQUIRY' AND c.status = 'OPEN'
+                  AND c.case_id IN (SELECT id FROM survey_cases WHERE {where_sql})
+                ORDER BY c.created_at ASC
+                LIMIT 50""",
+            params,
+        ).fetchall()
+        return ok([dict(r) for r in rows])
     finally:
         conn.close()
 

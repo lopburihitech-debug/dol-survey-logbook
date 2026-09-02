@@ -111,6 +111,23 @@
   const MAX_VIDEOS = 2;
   const MAX_VIDEO_SIZE_MB = 30;
 
+  // ประเภทเอกสารสิทธิ์ที่ดิน — ใช้ทั้งเติม dropdown และเปลี่ยนป้ายกำกับช่อง "เลขที่..." ให้ตรงกับประเภทที่เลือก
+  // (deedNoLabel ด้านล่าง) เรื่องเก่าที่ยังไม่เคยเลือกประเภท (deed_type ว่าง) จะเห็นป้ายกลางๆ ว่า "เลขที่เอกสาร" ไปก่อน
+  const DEED_TYPE_OPTIONS = ["โฉนดที่ดิน", "น.ส.3", "น.ส.3 ก.", "น.ส.3 ข."];
+  const DEED_TYPE_LABELS = {
+    "โฉนดที่ดิน": "เลขที่โฉนด",
+    "น.ส.3": "เลขที่ น.ส.3",
+    "น.ส.3 ก.": "เลขที่ น.ส.3 ก.",
+    "น.ส.3 ข.": "เลขที่ น.ส.3 ข.",
+  };
+  function deedNoLabel(deedType) {
+    return DEED_TYPE_LABELS[deedType] || "เลขที่เอกสาร";
+  }
+  function updateDeedNoLabel() {
+    const type = document.getElementById("p_deed_type").value;
+    document.getElementById("p_deed_no_label").textContent = deedNoLabel(type);
+  }
+
   // เส้นทางสถานะที่อนุญาต (mirror ของ backend ALLOWED_TRANSITIONS เฉพาะส่วนที่เลือกได้จากหน้าจอ
   // การตรวจสอบจริงยังเกิดที่ backend เสมอ)
   const TRANSITIONS = {
@@ -312,7 +329,14 @@
         <h2>ข้อมูลแปลงที่ดิน</h2>
         <form id="parcelForm">
           <div class="form-grid">
-            <div class="form-row"><label>เลขโฉนด</label><input id="p_deed_no" value="${p.deed_no || ""}"></div>
+            <div class="form-row">
+              <label>ประเภทเอกสารสิทธิ์</label>
+              <select id="p_deed_type" onchange="updateDeedNoLabel()">
+                <option value="">-- เลือกประเภทเอกสาร --</option>
+                ${DEED_TYPE_OPTIONS.map((t) => `<option value="${t}" ${p.deed_type === t ? "selected" : ""}>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div class="form-row"><label id="p_deed_no_label">${deedNoLabel(p.deed_type)}</label><input id="p_deed_no" value="${p.deed_no || ""}"></div>
             <div class="form-row"><label>เลขที่ดิน</label><input id="p_parcel_no" value="${p.parcel_no || ""}"></div>
             <div class="form-row"><label>ระวาง</label><input id="p_sheet" value="${p.survey_sheet_no || ""}"></div>
             <div class="form-row"><label>ตำบล</label><input id="p_sub_district" value="${p.sub_district || ""}"></div>
@@ -411,6 +435,7 @@
   async function saveParcel(e) {
     e.preventDefault();
     const payload = {
+      deed_type: document.getElementById("p_deed_type").value || null,
       deed_no: document.getElementById("p_deed_no").value || null,
       parcel_no: document.getElementById("p_parcel_no").value || null,
       survey_sheet_no: document.getElementById("p_sheet").value || null,
@@ -522,24 +547,30 @@
         const hasReply = !!(m.reply_text && m.reply_text.trim());
         return `
         <div class="msg-item">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; flex-wrap:wrap;">
-            <div style="font-size:13.5px; white-space:pre-wrap;">${m.description.replace(/</g, "&lt;")}</div>
+          <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
             <span class="badge" style="${resolved ? "background:#DCF3E4; color:var(--success);" : "background:var(--gold-light); color:var(--warning);"} flex-shrink:0;">
               ${resolved ? "ดำเนินการแล้ว" : "รอดำเนินการ"}
             </span>
           </div>
-          <div class="subtitle" style="margin-top:4px; font-size:11px;">
-            ${fmtDate(m.created_at)}${m.citizen_contact ? " · ติดต่อกลับ: " + m.citizen_contact : ""}
-            ${resolved && !hasReply && m.resolved_by_name ? " · ดำเนินการโดย " + m.resolved_by_name : ""}
+
+          <div class="chat-row citizen">
+            <div class="chat-sender">🙋 ประชาชน${m.citizen_contact ? " · ติดต่อกลับ: " + m.citizen_contact : ""}</div>
+            <div class="chat-bubble citizen">${m.description.replace(/</g, "&lt;")}</div>
+            <div class="chat-time">${fmtDate(m.created_at)}</div>
           </div>
+
           ${hasReply ? `
-          <div style="margin-top:8px; padding:8px 10px; background:#F4F8FC; border-radius:8px;">
-            <div style="font-size:11px; font-weight:600; color:var(--primary);">คำตอบจากเจ้าหน้าที่${m.replied_by_name ? " (" + m.replied_by_name + ")" : ""}</div>
-            <div style="font-size:13.5px; white-space:pre-wrap; margin-top:2px;">${m.reply_text.replace(/</g, "&lt;")}</div>
-            <div class="subtitle" style="margin-top:2px; font-size:11px;">${fmtDate(m.replied_at)}</div>
+          <div class="chat-row staff">
+            <div class="chat-sender">🧑‍💼 เจ้าหน้าที่${m.replied_by_name ? " (" + m.replied_by_name + ")" : ""}</div>
+            <div class="chat-bubble staff">${m.reply_text.replace(/</g, "&lt;")}</div>
+            <div class="chat-time">${fmtDate(m.replied_at)}</div>
           </div>` : ""}
+
+          ${resolved && !hasReply && m.resolved_by_name ? `
+          <div class="subtitle" style="margin-top:6px; font-size:11px; text-align:right;">✓ ดำเนินการโดย ${m.resolved_by_name} (ไม่ได้ตอบข้อความ)</div>` : ""}
+
           ${!resolved && canReplyToMessages() ? `
-          <div style="margin-top:8px;">
+          <div style="margin-top:10px;">
             <textarea id="reply-text-${m.id}" rows="2" placeholder="พิมพ์คำตอบให้ประชาชนเห็นในหน้าติดตามงาน..." style="width:100%; font-size:13.5px;"></textarea>
             <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
               <button type="button" class="btn btn-primary btn-sm" onclick="replyCaseMessage('${m.id}')">✉ ส่งคำตอบ</button>
